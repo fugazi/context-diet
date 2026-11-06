@@ -51,7 +51,8 @@ context-diet/
 ## Estado del trabajo
 
 - [x] Repo privado creado
-- [ ] Spike: validar qué expone la API de mods (MCP servers, tools, skills, usage breakdown)
+- [x] Spike estático: estructura validada con Claude Code 2.1.318 (`plugin validate` OK)
+- [ ] Spike runtime: requiere una sesión logueada (el gateway no tiene auth de Anthropic)
 - [ ] Spec técnica del MVP
 - [ ] Implementación de `/diet`
 - [ ] Pruebas en una sesión real con MCPs y skills

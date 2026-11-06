@@ -1,0 +1,9 @@
+{
+  "name": "context-diet-spike",
+  "version": "0.0.1",
+  "description": "Spike: inspect the Claude Code mods API for Context Diet.",
+  "license": "MIT",
+  "author": {
+    "name": "Douglas Fugazi"
+  }
+}

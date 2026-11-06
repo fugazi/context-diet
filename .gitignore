@@ -1,6 +1,8 @@
 node_modules/
+.tools/
 .env
 .env.*
 .DS_Store
 *.log
+.context-diet-spike.json
 .playwright-cli/
