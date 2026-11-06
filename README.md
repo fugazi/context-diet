@@ -26,7 +26,24 @@ El contexto no se gasta solo en la conversación. Cada MCP suma definiciones de 
 - Recomendaciones generadas por un modelo.
 - Registrar un tool propio: el mod que mide tokens no debe agregar tokens.
 
-## Estructura prevista
+## Uso (MVP)
+
+Desde la raíz del repo:
+
+```bash
+claude --plugin-dir .
+```
+
+Dentro de la sesión:
+
+```text
+/diet
+/diet --json
+```
+
+`/diet` imprime el reporte legible; `/diet --json` devuelve el mismo reporte como JSON para QA o automatización. El comando no registra tools propias: el mod que mide tokens no debe agregar tokens.
+
+## Estructura
 
 ```text
 context-diet/
@@ -35,12 +52,23 @@ context-diet/
 ├── hooks/
 │   ├── hooks.json
 │   └── context-diet.mjs
-├── types/
-│   └── index.d.ts
-├── tests/
-│   └── context-diet.test.ts
+├── docs/
+│   ├── mvp-spec.md
+│   └── spike-mods-api.md
+├── spike/              # plugin mínimo para el spike de la API
+├── test/
+│   └── harness.mjs     # prueba local con un `$` falso
 └── README.md
 ```
+
+## QA del MVP
+
+1. `claude plugin validate .` debe pasar.
+2. `claude --plugin-dir . plugin details context-diet` debe reportar `Always-on: ~0 tok`.
+3. `node test/harness.mjs` debe imprimir `HARNESS OK`.
+4. En una sesión real: correr un turno, ejecutar `/diet` y comparar el porcentaje de contexto con `/context`.
+5. Revisar que los MCPs y skills usados coincidan con lo que muestra la sesión.
+6. Probar `/diet --json` y verificar que el JSON parsea.
 
 ## Referencias
 
@@ -53,6 +81,7 @@ context-diet/
 - [x] Repo privado creado
 - [x] Spike estático: estructura validada con Claude Code 2.1.318 (`plugin validate` OK)
 - [ ] Spike runtime: requiere una sesión logueada (el gateway no tiene auth de Anthropic)
-- [ ] Spec técnica del MVP
-- [ ] Implementación de `/diet`
-- [ ] Pruebas en una sesión real con MCPs y skills
+- [x] Spec técnica del MVP (`docs/mvp-spec.md`)
+- [x] Implementación inicial de `/diet` v0.1
+- [x] Harness local (`node test/harness.mjs`)
+- [ ] QA en una sesión real con MCPs y skills

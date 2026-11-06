@@ -1,0 +1,9 @@
+{
+  "name": "context-diet",
+  "version": "0.1.0",
+  "description": "Audit MCP and skill context cost for the current Claude Code session.",
+  "license": "MIT",
+  "author": {
+    "name": "Douglas Fugazi"
+  }
+}
