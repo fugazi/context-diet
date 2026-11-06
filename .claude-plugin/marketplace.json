@@ -1,0 +1,14 @@
+{
+  "name": "context-diet",
+  "description": "Context cost audits for Claude Code sessions.",
+  "owner": {
+    "name": "Douglas Fugazi"
+  },
+  "plugins": [
+    {
+      "name": "context-diet",
+      "source": "./",
+      "description": "Audit MCP and skill context cost for the current Claude Code session."
+    }
+  ]
+}

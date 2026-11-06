@@ -26,9 +26,21 @@ El contexto no se gasta solo en la conversación. Cada MCP suma definiciones de 
 - Recomendaciones generadas por un modelo.
 - Registrar un tool propio: el mod que mide tokens no debe agregar tokens.
 
-## Uso (MVP)
+## Instalación
 
-Desde la raíz del repo:
+Marketplace (recomendado, requiere Claude Code 2.1.275+ y acceso al repo privado):
+
+```text
+/plugin install context-diet --marketplace fugazi/context-diet
+```
+
+O desde la terminal, sin abrir sesión:
+
+```bash
+claude plugin install context-diet --marketplace fugazi/context-diet
+```
+
+Modo desarrollo, desde la raíz del repo clonado:
 
 ```bash
 claude --plugin-dir .
