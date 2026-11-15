@@ -43,3 +43,17 @@ Hacer un turno y revisar `.context-diet-spike.json`. Ese archivo responde:
 ## Implicación para el MVP
 
 El MVP se puede construir con la API documentada, pero el costo por servidor será **estimado** (configs + schemas + tokenizer), no un dato exacto de Anthropic. La estimación debe mostrarse como rango y con método visible. El veredicto y la acción copiable no dependen de esa precisión.
+
+## Cierre (2026-11-14, Claude Code 2.1.325)
+
+El spike se cerró con una sesión logueada. Lo que cambió respecto a lo anterior:
+
+- **Sí hay breakdown por servidor.** `$.session.usage({ breakdown: 'summary' })` devuelve el desglose de `/context`: `mcpTools` (con `serverName`, `tokens` e `isLoaded`), `skills.skillFrontmatter`, `agents`, `memoryFiles`, `categories` y `autoCompactThreshold`. `summary` estima en local (~35 ms, sin requests); `full` cuenta con la API de tokens.
+- **Las tools MCP van diferidas por defecto.** Tras ToolSearch no ocupan la ventana; `isLoaded` dice cuáles sí. El costo real de un server es lo cargado, no la suma de sus schemas.
+- **`tool.describe` no sirve como inventario.** Se dispara al renderizar el schema de una tool, no al inicio: en una sesión recién abierta no había llegado para ninguna tool MCP.
+- **`skill.prompt`** trae `skill` (string), `source` y `pluginName`.
+- **`tool.call`** resuelve con `isError` / `deny`, así que los errores se pueden contar.
+- **`$.store`** persiste entre sesiones también para un mod cargado con `--plugin-dir`.
+- **Los tipos son la referencia.** El skill `plugin-authoring` escribe `claude-code.d.ts` para el build en uso; con eso sobra la reflexión sobre `$`.
+
+El diseño vigente está en [spec.md](spec.md).

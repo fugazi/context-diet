@@ -1,8 +1,9 @@
 {
   "name": "context-diet",
-  "version": "0.1.0",
-  "description": "Audit MCP and skill context cost for the current Claude Code session.",
+  "version": "1.1.0",
+  "description": "Audit the context cost of MCP servers, skills, agents and memory files in a Claude Code session.",
   "license": "MIT",
+  "types": "./types/index.d.ts",
   "author": {
     "name": "Douglas Fugazi"
   }
