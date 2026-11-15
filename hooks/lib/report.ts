@@ -128,17 +128,28 @@ function verdictOf(callsNow: number, evidence: DietEvidence): DietVerdict {
   return 'watch'
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const CLAUDE_AI = /^claude[._ ]ai[_ ]/i
+
 function scopeOf(name: string, scopes: Record<string, DietScope>): DietScope {
   const known = scopes[name]
   if (known) return known
-  if (/^claude[._ ]ai[_ ]/i.test(name)) return 'connector'
-  return 'unknown'
+  // Los conectores de claude.ai llegan con ese prefijo o, en la app, con un id.
+  if (CLAUDE_AI.test(name) || UUID.test(name)) return 'connector'
+  return 'host'
 }
 
-function serverAction(name: string, scope: DietScope): string {
-  if (scope === 'connector') return `desconecta "${name}" desde /mcp o en claude.ai → Conectores`
-  if (scope === 'unknown') return `"${name}" lo aporta un plugin u otra fuente: revisa \`claude plugin list\``
-  return `claude mcp remove -s ${scope} ${name}`
+/** Un nombre que se pueda leer: el que lista /mcp cuando dice más que la clave. */
+export function serverLabel(name: string, serverName?: string): string {
+  const shown = serverName && !UUID.test(serverName) ? serverName : name
+  if (UUID.test(shown)) return `conector ${shown.slice(0, 8)}`
+  if (CLAUDE_AI.test(shown)) return `${shown.replace(CLAUDE_AI, '').replace(/_/g, ' ')} (claude.ai)`
+  return shown
+}
+
+function serverAction(server: DietServer): string {
+  if (server.scope === 'connector') return `desconecta "${server.label}" desde /mcp o en claude.ai → Conectores`
+  return `claude mcp remove -s ${server.scope} ${server.name}`
 }
 
 function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
@@ -146,6 +157,7 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
   const byName = new Map<string, DietServer>()
   const blank = (name: string): DietServer => ({
     name,
+    label: serverLabel(name),
     scope: scopeOf(name, input.scopes),
     tools: 0,
     loadedTools: 0,
@@ -168,6 +180,7 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
     const server = byName.get(name) ?? byName.get(tool.serverName) ?? blank(name)
     byName.set(server.name, server)
     server.isConnected = true
+    server.label = serverLabel(server.name, tool.serverName)
     server.tools += 1
     server.totalTokens += tool.tokens
     if (tool.isLoaded) {
@@ -184,10 +197,12 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
     server.calls = counter?.calls ?? 0
     server.errors = counter?.errors ?? 0
     server.evidence = evidenceOf(history, record => record.servers[server.name]?.calls)
-    server.verdict = verdictOf(server.calls, server.evidence)
+    // Lo que aporta la app o un plugin no se quita desde un config: no se juzga.
+    server.verdict =
+      server.scope === 'host' ? (server.calls > 0 ? 'used' : 'info') : verdictOf(server.calls, server.evidence)
     if (server.verdict === 'candidate') {
       server.saving = server.loadedTokens
-      server.action = serverAction(server.name, server.scope)
+      server.action = serverAction(server)
     }
   }
   return [...byName.values()].sort(

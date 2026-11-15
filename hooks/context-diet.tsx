@@ -6,24 +6,28 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { DietCounter, DietHistory, DietReport, DietScope, DietUsage } from '../types'
 import { EMPTY_HISTORY, EMPTY_USAGE, buildReport, parseMcpTool, sanitizeHistory, skillGroupKey } from './lib/report'
-import { VERDICT_LABEL, evidenceText, forecastText, formatTokens, renderReport, statusText } from './lib/render'
+import { label, labelWidth } from './lib/label'
+import { renderReport, reportStamp, summarize } from './lib/render'
 
 const PANE = 'context-diet'
 const PANE_TITLE = 'Context Diet'
 const HISTORY_KEY = 'history-1'
-const STATUS_KEY = 'status-line'
+const BAND_KEY = 'band'
 const HELP = [
-  '/diet                 reporte en el transcript',
-  '/diet --json          el mismo reporte como JSON',
+  '/diet                 la etiqueta de la sesión',
+  '/diet --all           con cada server, skill, agente y archivo',
+  '/diet --json          el reporte como JSON',
   '/diet panel           abre el panel en vivo',
-  '/diet status on|off   muestra u oculta la línea de estado',
+  '/diet banda on|off    avisos sobre el prompt cuando hay algo que hacer',
   '/diet reset           borra el historial entre sesiones',
 ].join('\n')
 
 // Cambia la etiqueta cuando cambie la forma: descarta lo que guardó una
 // versión anterior, que sobrevive a un hot reload.
 const usageAtom = atom({ plugin: 'context-diet', key: 'usage' } as const, EMPTY_USAGE, { shape: 'usage-1' })
-const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-1' })
+const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-2' })
+const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-2' })
+const bandAtom = atom({ plugin: 'context-diet', key: 'band' } as const, true)
 
 type Engine = EngineInterface
 
@@ -92,22 +96,6 @@ async function loadHistory($: Engine): Promise<DietHistory> {
   }
 }
 
-async function isStatusOn($: Engine): Promise<boolean> {
-  try {
-    return (await $.store.get(STATUS_KEY)) !== false
-  } catch {
-    return true
-  }
-}
-
-async function showStatus($: Engine, report: DietReport | null, percent?: number | null) {
-  try {
-    $.ui.status((await isStatusOn($)) ? statusText(report, percent) : undefined)
-  } catch {
-    // La línea de estado es una comodidad.
-  }
-}
-
 /** Mide, arma el reporte, lo publica en `$.state` y guarda el historial. */
 async function refresh($: Engine): Promise<DietReport> {
   let cwd = '.'
@@ -141,11 +129,17 @@ export const register: Register = on => {
       await $.command.register({
         name: 'diet',
         description: 'Audita el costo de contexto de MCPs, skills, agentes y memoria',
-        argumentHint: '[--json | panel | status on|off | reset]',
+        argumentHint: '[--all | --json | panel | banda on|off | reset]',
         immediate: true,
       })
     } catch (error) {
       $.ui.log(`Context Diet: /diet no registrado: ${String(error)}`)
+    }
+    try {
+      const isOn = (await $.store.get(BAND_KEY)) !== false
+      await update($, bandAtom, () => isOn)
+    } catch {
+      // Sin preferencia guardada, la banda queda encendida.
     }
     return next(e)
   })
@@ -200,20 +194,10 @@ export const register: Register = on => {
           turns: usage.turns + 1,
           samples: context.tokens === undefined ? usage.samples : [...usage.samples, context.tokens].slice(-20),
         }))
-        await showStatus($, await refresh($))
+        await refresh($)
       } catch {
         // El turno termina igual.
       }
-    }
-    return next(e)
-  })
-
-  // Entre turnos solo se mueve el porcentaje: se reusa el último reporte.
-  on('session.measure', async ($, e, next) => {
-    try {
-      if (e.changed.includes('context')) await showStatus($, await read($, reportAtom), e.context.percent)
-    } catch {
-      // Observador.
     }
     return next(e)
   })
@@ -226,30 +210,41 @@ export const register: Register = on => {
       await refresh($)
       return { text: 'Context Diet: historial borrado.' }
     }
-    if (args.startsWith('status')) {
-      const wanted = args.split(/\s+/)[1]
-      if (wanted !== 'on' && wanted !== 'off') return { text: 'Uso: /diet status on|off' }
-      await $.store.set(STATUS_KEY, wanted === 'on')
-      await showStatus($, await refresh($))
-      return { text: `Context Diet: línea de estado ${wanted === 'on' ? 'activada' : 'oculta'}.` }
+    const [word, wanted] = args.split(/\s+/)
+    if (word === 'banda' || word === 'status') {
+      if (wanted !== 'on' && wanted !== 'off') return { text: 'Uso: /diet banda on|off' }
+      await $.store.set(BAND_KEY, wanted === 'on')
+      await update($, bandAtom, () => wanted === 'on')
+      return { text: `Context Diet: avisos sobre el prompt ${wanted === 'on' ? 'activados' : 'apagados'}.` }
     }
     const report = await refresh($)
-    await showStatus($, report)
     if (args === 'panel' || args === '--panel') {
       const { isPlaced } = await $.ui.open({ id: PANE, title: PANE_TITLE })
       return { text: isPlaced ? 'Context Diet: panel abierto.' : renderReport(report) }
     }
-    if (args.includes('--json')) return { text: JSON.stringify(report, null, 2) }
-    if (args) return { text: `Argumento desconocido: "${e.args.trim()}"\n\n${HELP}` }
-    return { text: renderReport(report) }
+    if (args === '--json') return { text: JSON.stringify(report, null, 2) }
+    if (args && args !== '--all') return { text: `Argumento desconocido: "${e.args.trim()}"\n\n${HELP}` }
+    // La fila se dibuja de este reporte, no del que se refresca en cada turno.
+    await update($, printedAtom, () => report)
+    return { text: renderReport(report, { isDetailed: args === '--all' }) }
+  })
+
+  // La fila de `/diet` en el transcript, como etiqueta. Solo la del último
+  // reporte impreso: una fila anterior, o de otra sesión, queda como texto.
+  on('ui.render', { component: 'CommandOutput', props: { command: 'diet' } }, async ($, e, next) => {
+    const report = await read($, printedAtom)
+    if (!report || e.props.isErrored || !e.props.text.startsWith(reportStamp(report))) return next(e)
+    return label($.ui.resolve(e), report, {
+      width: labelWidth(e.viewport?.columns),
+      isDetailed: e.props.args.trim().toLowerCase() === '--all',
+    })
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Progress } = $.ui.resolve(e)
+    const kit = $.ui.resolve(e)
+    const { Box, Text, Button } = kit
     const report = await read($, reportAtom)
-    const reload = (
-      <Button key="refresh" label="Actualizar" hotkey="r" onPress={() => void refresh($)} />
-    )
+    const reload = <Button key="refresh" label="Actualizar" hotkey="r" onPress={() => void refresh($)} />
     if (!report) {
       return (
         <Box flexDirection="column">
@@ -258,62 +253,29 @@ export const register: Register = on => {
         </Box>
       )
     }
-    const { forecast, totals } = report
     if (e.props.placement === 'widget') {
-      return <Text>{statusText(report) ?? PANE_TITLE}</Text>
+      return <Text>{summarize(report).alert ?? `fijo ${report.totals.fixed} tokens por request`}</Text>
     }
-    const actions = [...report.servers, ...report.skillGroups].filter(item => item.action)
-    const servers = report.servers.filter(server => server.isConnected)
-
     return (
       <Box flexDirection="column">
-        <Progress
-          label="Contexto"
-          value={forecast.used}
-          max={Math.max(forecast.threshold, 1)}
-          valueText={`${formatTokens(forecast.used)} / ${formatTokens(forecast.threshold)}`}
-        />
-        <Text>Fijo por request: {formatTokens(totals.fixed)}</Text>
-        <Text dimColor>{forecastText(report)}</Text>
-
-        <Text bold>
-          {'\n'}MCP · {formatTokens(totals.mcpLoaded)} cargados · {formatTokens(totals.mcpDeferred)} diferidos
-        </Text>
-        {servers.length === 0 && <Text dimColor>Sin servidores MCP.</Text>}
-        {servers.map(server => (
-          <Text dimColor={server.verdict === 'used'} wrap="truncate-end">
-            {VERDICT_LABEL[server.verdict].padEnd(10)}
-            {server.name} · {formatTokens(server.loadedTokens)} · {server.calls} llamadas ·{' '}
-            {evidenceText(server.evidence)}
-          </Text>
-        ))}
-
-        <Text bold>
-          {'\n'}Skills · {formatTokens(totals.skills)}
-        </Text>
-        {report.skillGroups.slice(0, 12).map(group => (
-          <Text dimColor={group.verdict === 'used' || group.verdict === 'info'} wrap="truncate-end">
-            {VERDICT_LABEL[group.verdict].padEnd(10)}
-            {group.label} · {formatTokens(group.tokens)} · {group.loads} cargas
-          </Text>
-        ))}
-        {report.skillGroups.length > 12 && <Text dimColor>… {report.skillGroups.length - 12} más en /diet</Text>}
-
-        <Text dimColor>
-          {'\n'}Agentes {formatTokens(totals.agents)} · Memoria {formatTokens(totals.memory)} · Historial{' '}
-          {report.history.sessions} sesión(es)
-        </Text>
-
-        <Text bold>
-          {'\n'}Acciones{actions.length ? ` · −${formatTokens(totals.potentialSaving)} por request` : ''}
-        </Text>
-        {actions.length === 0 && <Text dimColor>Sin candidatos por ahora.</Text>}
-        {actions.map(item => (
-          <Text wrap="wrap">{item.action}</Text>
-        ))}
-        <Text> </Text>
+        {label(kit, report, { width: labelWidth(e.props.bodyColumns) })}
         {reload}
       </Box>
+    )
+  })
+
+  // La banda sobre el prompt: callada salvo que haya algo que hacer.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const [report, isOn] = await Promise.all([read($, reportAtom), read($, bandAtom)])
+    const alert = report && isOn ? summarize(report).alert : null
+    if (!alert || e.props.hasSurvey) return next(e)
+    const { Text } = $.ui.resolve(e)
+    return (
+      <Text wrap="truncate-end">
+        <Text color="warning">● diet </Text>
+        {alert}
+        <Text dimColor> · /diet</Text>
+      </Text>
     )
   })
 }

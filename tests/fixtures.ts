@@ -16,6 +16,9 @@ const TOOLS: Tool[] = [
   { server: 'firecrawl', tool: 'crawl', tokens: 18000, isLoaded: false },
   { server: 'brave-search', tool: 'web', tokens: 11000, isLoaded: false },
   { server: 'claude_ai_Docs', tool: 'read', tokens: 500, isLoaded: true },
+  // Lo que aporta la app: no está en ningún config del usuario.
+  { server: 'ccd_session', tool: 'start', tokens: 1000, isLoaded: true },
+  { server: 'ccd_session', tool: 'list', tokens: 4000, isLoaded: false },
 ]
 
 export function usageFixture(options: { messages?: number; tokens?: number } = {}): SessionUsage {
@@ -96,6 +99,7 @@ export function pastSession(daysAgo: number, used: Partial<DietSessionRecord> = 
       firecrawl: { calls: 0, loadedTokens: 8000 },
       'brave-search': { calls: 0, loadedTokens: 0 },
       claude_ai_Docs: { calls: 0, loadedTokens: 500 },
+      ccd_session: { calls: 0, loadedTokens: 1000 },
       ...used.servers,
     },
     skillGroups: { 'plugin:agent-skills': 0, 'built-in': 0, ...used.skillGroups },

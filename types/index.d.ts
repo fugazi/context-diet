@@ -59,10 +59,18 @@ export type DietEvidence = {
  */
 export type DietVerdict = 'used' | 'occasional' | 'candidate' | 'watch' | 'info'
 
-export type DietScope = 'user' | 'project' | 'local' | 'connector' | 'unknown'
+/**
+ * De dónde viene un server. `user`, `project` y `local` están en un config
+ * tuyo; `connector` es de claude.ai; `host` lo aporta la app o un plugin y no
+ * se quita con `claude mcp remove`.
+ */
+export type DietScope = 'user' | 'project' | 'local' | 'connector' | 'host'
 
 export type DietServer = {
+  /** Como llega en los `tool.call` (`mcp__<name>__tool`). */
   name: string
+  /** Nombre para mostrar. */
+  label: string
   scope: DietScope
   tools: number
   loadedTools: number
@@ -167,6 +175,10 @@ declare module 'claude-code' {
     'context-diet': {
       usage: Shaped<DietUsage>
       report: Shaped<DietReport | null>
+      /** El último reporte que `/diet` imprimió: su fila se dibuja de aquí. */
+      printed: Shaped<DietReport | null>
+      /** Si la banda sobre el prompt puede mostrarse. */
+      band: boolean
     }
   }
 }

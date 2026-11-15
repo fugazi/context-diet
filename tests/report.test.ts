@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { buildReport, parseMcpTool, pruneHistory, sanitizeHistory } from '../hooks/lib/report'
-import { formatTokens, renderReport, statusText } from '../hooks/lib/render'
+import { buildReport, parseMcpTool, pruneHistory, sanitizeHistory, serverLabel } from '../hooks/lib/report'
+import { leaderCells, splitCells } from '../hooks/lib/label'
+import { formatTokens, renderReport, summarize } from '../hooks/lib/render'
 import { DAY, NOW, counters, pastSession, usageFixture } from './fixtures'
 
 const SCOPES = { firecrawl: 'user', 'brave-search': 'project', ableton: 'user' } as const
@@ -46,21 +47,42 @@ test('el costo por server separa lo cargado de lo diferido', () => {
   expect(firecrawl.deferredTokens).toBe(18000)
   // Un server 100% diferido no cuesta nada por request.
   expect(server(report, 'brave-search').loadedTokens).toBe(0)
-  expect(report.totals.mcpLoaded).toBe(8500)
-  expect(report.totals.mcpDeferred).toBe(29000)
+  expect(report.totals.mcpLoaded).toBe(9500)
+  expect(report.totals.mcpDeferred).toBe(33000)
   expect(report.totals.mcpInstructions).toBe(1800)
   // Ordenados por lo que pesan ahora.
   expect(report.servers[0]?.name).toBe('firecrawl')
 })
 
-test('scope: config, conector de claude.ai, y configurado sin tools', () => {
+test('scope: config, conector de claude.ai, app, y configurado sin tools', () => {
   const { report } = build()
   expect(server(report, 'firecrawl').scope).toBe('user')
   expect(server(report, 'brave-search').scope).toBe('project')
   expect(server(report, 'claude_ai_Docs').scope).toBe('connector')
+  expect(server(report, 'claude_ai_Docs').label).toBe('Docs (claude.ai)')
+  expect(server(report, 'ccd_session').scope).toBe('host')
   const ableton = server(report, 'ableton')
   expect(ableton.isConnected).toBe(false)
   expect(ableton.tools).toBe(0)
+})
+
+test('nombres legibles: un id de conector no se muestra crudo', () => {
+  const id = '1a59c906-04da-521d-bda7-7f71b9f9e01c'
+  expect(serverLabel(id)).toBe('conector 1a59c906')
+  expect(serverLabel(id, 'Claude Docs')).toBe('Claude Docs')
+  expect(serverLabel('claude_ai_Claude_Docs')).toBe('Claude Docs (claude.ai)')
+  expect(serverLabel('firecrawl', 'firecrawl')).toBe('firecrawl')
+})
+
+test('lo que aporta la app nunca es candidato, con el historial que sea', () => {
+  const history = { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } }
+  const { report } = build({ history })
+  const host = server(report, 'ccd_session')
+  expect(host.verdict).toBe('info')
+  expect(host.action).toBe(null)
+  expect(host.saving).toBe(0)
+  const used = build({ history, counters: counters({ servers: { ccd_session: { calls: 2, errors: 0, lastAt: NOW } } }) })
+  expect(server(used.report, 'ccd_session').verdict).toBe('used')
 })
 
 test('sin historial nada es candidato: una sesión no es evidencia', () => {
@@ -169,20 +191,67 @@ test('sanitizeHistory tolera lo que haya en el store', () => {
   })
 })
 
-test('render: el texto trae cada sección, veredicto y acción', () => {
+test('resumen: lo tuyo que pesa, lo ocioso en una línea y la app agregada', () => {
+  const { report } = build({ usage: usageFixture({ messages: 20000 }) })
+  const summary = summarize(report)
+  expect(summary.shown.map(one => one.name)).toEqual(['firecrawl', 'claude_ai_Docs'])
+  expect(summary.idle.map(one => one.name)).toEqual(['brave-search'])
+  expect(summary.missing.map(one => one.name)).toEqual(['ableton'])
+  expect(summary.host).toEqual({ servers: 1, loadedTokens: 1000, deferredTokens: 4000, calls: 0 })
+  expect(summary.deferred).toEqual({ servers: 3, tokens: 33000 })
+  expect(summary.composition[0]).toEqual({ label: 'Tools del sistema', tokens: 9700 })
+  expect(summary.composition.some(part => /messages/i.test(part.label))).toBe(false)
+  const { share } = summary
+  expect(Math.round((share.fixed + share.conversation + share.free) * 100)).toBe(100)
+  expect(summary.fixedPercent).toBe(Math.round((report.forecast.fixed / report.forecast.used) * 100))
+})
+
+test('aviso: solo con candidatos o con la compactación cerca', () => {
+  expect(summarize(build().report).alert).toBe(null)
+  const history = { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } }
+  expect(summarize(build({ history }).report).alert).toBe('6 candidatos a apagar · −10.7k por request')
+  const near = build({ usage: usageFixture({ messages: 120000 }), counters: counters({ turns: 3, samples: [100000, 110000, 120000] }) })
+  expect(summarize(near.report).alert).toMatch(/^~\d turnos hasta la compactación$/)
+})
+
+test('la barra reparte todas sus celdas', () => {
+  expect(splitCells([0.07, 0.19, 0.74], 50)).toEqual([4, 10, 36])
+  expect(splitCells([0.001, 0, 0.999], 40)).toEqual([1, 0, 39])
+  expect(splitCells([0.5, 0.5, 0], 9).reduce((sum, size) => sum + size, 0)).toBe(9)
+})
+
+test('una fila con puntos guía mide el ancho exacto y recorta el nombre', () => {
+  const cells = (name: string, value: string, width: number) => {
+    const row = leaderCells(name, value, width)
+    return `${row.name} ${row.dots} ${value}`
+  }
+  expect(cells('Skills', '10k', 20)).toBe('Skills ......... 10k')
+  for (const name of ['a', 'Tools MCP cargadas', 'x'.repeat(80)]) expect(cells(name, '23.6k', 40).length).toBe(40)
+  expect(leaderCells('x'.repeat(80), '23.6k', 40).name.endsWith('…')).toBe(true)
+})
+
+test('texto: resumen corto por defecto y todo con --all', () => {
   const history = { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } }
   const { report } = build({ history, usage: usageFixture({ tokens: 38100 }) })
   const text = renderReport(report)
-  for (const heading of ['CONTEXTO', 'MCP (3)', 'SKILLS', 'AGENTES', 'MEMORIA', 'ACCIONES']) {
-    expect(text).toContain(heading)
-  }
-  expect(text).toContain('38.1k / 200k (19%)')
+  expect(text).toMatch(/^Context Diet · \d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC · claude-test\n/)
+  expect(text).toContain('en uso      38.1k / 200k (19%)')
+  expect(text).toContain('TUS SERVIDORES MCP (3)')
   expect(text).toMatch(/CANDIDATO\s+firecrawl \[user\] · 8k cargados \(2\/3 tools\) · 18k diferidos/)
+  // brave-search es candidato (0 de ahorro): tiene veredicto, así que se muestra.
+  expect(text).toMatch(/CANDIDATO\s+brave-search \[project\] · 0 cargados/)
   expect(text).toMatch(/SIN TOOLS\s+ableton/)
+  expect(text).toContain('APP DE CLAUDE Y PLUGINS · 1 servers · 1k cargados')
+  expect(text).not.toContain('ccd_session')
+  expect(text).toContain('DIFERIDO · 3 servers · 33k tras ToolSearch · 0 por request')
   expect(text).toContain('claude mcp remove -s user firecrawl   # −8k')
-  expect(text).toMatch(/PESADO\s+\/home\/u\/\.claude\/CLAUDE\.md/)
-  expect(statusText(report)).toBe('diet 19% · fijo 30.3k · 6 candidatos')
-  expect(statusText(null)).toBe(undefined)
+  expect(text).toMatch(/PESADO \/home\/u\/\.claude\/CLAUDE\.md/)
+  expect(text).toContain('Detalle: /diet --all.')
+
+  const all = renderReport(report, { isDetailed: true })
+  expect(all).toMatch(/FIJO\s+ccd_session \[host\] · 1k cargados/)
+  expect(all).toContain('reviewer [plugin] · 700 · 0 usos')
+  expect(all).toContain('/work/CLAUDE.md [Project] · 1.2k')
   expect(formatTokens(1_500_000)).toBe('1.5M')
   expect(formatTokens(null)).toBe('?')
 })

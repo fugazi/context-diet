@@ -1,6 +1,6 @@
 # Roadmap
 
-Estado al 2026-11-14 · versión 1.0.0 · probado con Claude Code 2.1.325.
+Estado al 2026-11-14 · versión 1.1.0 · probado con Claude Code 2.1.325.
 
 ## Hecho
 
@@ -34,18 +34,27 @@ Estado al 2026-11-14 · versión 1.0.0 · probado con Claude Code 2.1.325.
 - [x] Panel (`/diet panel`) que se redibuja solo cuando cambia el reporte.
 - [x] Línea de estado actualizada al cerrar cada turno y con cada `session.measure`; `/diet status on|off`.
 
+### v1.1 — presentación
+- [x] `/diet` se dibuja como etiqueta nutricional: una cifra al frente, barra fijo / conversación / libre, de qué está hecho el fijo, colores por veredicto y barras proporcionales.
+- [x] Servers de la app y de plugins agregados en una línea y marcados `FIJO`: no tapan los propios ni se proponen para quitar.
+- [x] Lo diferido, en una línea; el detalle completo con `/diet --all`.
+- [x] Nombres legibles para conectores (`Claude Docs (claude.ai)` en vez de un id).
+- [x] La línea de estado se reemplaza por una banda sobre el prompt que solo aparece cuando hay algo que hacer; `/diet banda on|off`.
+- [x] Tests en `tests/`, la carpeta que el motor incluye en su `tsconfig`.
+
 ## Siguiente
 
-### v1.1 — validar con uso real
+### v1.2 — validar con uso real
 - [ ] Usarlo una semana: los veredictos necesitan 3+ sesiones reales. Ajustar `MIN_SESSIONS` y el umbral de memoria pesada con esos datos.
-- [ ] QA visual del panel en terminal y en la app de escritorio (hoy solo lo cubren los tests del árbol).
+- [ ] QA visual de la etiqueta, el panel y la banda en terminal y en la app de escritorio (hoy solo los cubren los tests del árbol).
+- [ ] En escritorio, probar la barra como `Svg` en vez de caracteres de bloque.
 - [ ] `/diet --full`: desglose contado con la API de tokens, para comparar contra el estimado local.
 - [ ] Avisar cuando `/diet` corre antes de que terminen de conectar los servers MCP.
 
-### v1.2 — de diagnóstico a tratamiento
+### v1.3 — de diagnóstico a tratamiento
 - [ ] Dieta opt-in: un hook `tool.describe` que difiere (`isDeferred: true`) las tools cargadas de servers `OCASIONAL`. Ahorra sin desinstalar nada.
 - [ ] Detalle por tool dentro de un server (qué tools concretas se usan).
-- [ ] Atribuir servers MCP a su plugin, para dar el comando exacto en vez de «revisa `claude plugin list`».
+- [ ] Atribuir servers MCP a su plugin: hoy van al grupo de la app aunque el plugin se pueda desactivar.
 - [ ] Historial por proyecto: un server puede ser inútil aquí y esencial en otro repo.
 
 ### Publicación

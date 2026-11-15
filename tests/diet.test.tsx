@@ -19,8 +19,22 @@ const PANE = {
   },
 } as const
 
+const BAND = {
+  plugin: 'context-diet',
+  component: 'AbovePrompt',
+  requestId: 'band',
+  props: {
+    hasSurvey: false,
+    isCollapsed: false,
+    isWorking: false,
+    maxRows: 6,
+    bodyColumns: 80,
+    scroll: { offset: 0, bodyRows: 6 },
+    view: {},
+  },
+} as const
+
 type World = {
-  statuses: (string | undefined)[]
   usageCalls: unknown[]
   files: Record<string, string>
   store: Map<string, unknown>
@@ -29,7 +43,6 @@ type World = {
 /** Lo que hay debajo del mod: cada hook aquí hace de motor. */
 function world(on: On, options: { store?: Record<string, unknown>; tokens?: number } = {}): World {
   const seen: World = {
-    statuses: [],
     usageCalls: [],
     store: new Map(Object.entries(options.store ?? {})),
     files: {
@@ -65,10 +78,6 @@ function world(on: On, options: { store?: Record<string, unknown>; tokens?: numb
     if (text === undefined) throw new Error('ENOENT')
     return { value: text }
   })
-  on('ui.status', (_, e) => {
-    seen.statuses.push((e as { text?: string }).text)
-    return { value: undefined }
-  })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('tool.call', (_, e) => (String(e.tool).endsWith('__crawl') ? { result: {}, isError: true } : { result: {} }))
   on('skill.prompt', (_, e) => ({ text: e.text }))
@@ -85,21 +94,25 @@ const diet = ($: { command: { run: (e: never) => Promise<{ text?: string }> } },
 
 const TURN = { answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' }
 
-test('/diet imprime el reporte con el desglose real y no lee secretos', async ($, on) => {
+test('/diet imprime el resumen con el desglose real y no lee secretos', async ($, on) => {
   const seen = world(on)
   await start($)
 
-  const ran = await diet($, '')
-  expect(ran.text).toContain('38.1k / 200k (19%)')
-  expect(ran.text).toMatch(/OBSERVAR\s+firecrawl \[user\] · 8k cargados \(2\/3 tools\)/)
-  // `projects[cwd]` de ~/.claude.json es el scope local; `.mcp.json`, project.
-  expect(ran.text).toMatch(/brave-search \[local\] · 0 cargados/)
-  expect(ran.text).toMatch(/SIN TOOLS\s+ableton \[project\]/)
-  expect(ran.text).toMatch(/faltan 3 sesión\(es\) de historial/)
-  expect(ran.text).not.toContain('sk-secreto')
+  const text = (await diet($, '')).text ?? ''
+  expect(text).toContain('en uso      38.1k / 200k (19%)')
+  expect(text).toMatch(/OBSERVAR\s+firecrawl \[user\] · 8k cargados \(2\/3 tools\)/)
+  expect(text).toContain('sin costo ni uso: brave-search')
+  expect(text).toMatch(/SIN TOOLS\s+ableton \[project\]/)
+  expect(text).toContain('APP DE CLAUDE Y PLUGINS · 1 servers')
+  expect(text).toMatch(/faltan 3 sesión\(es\) de historial/)
+  expect(text).not.toContain('sk-secreto')
   // Pide el desglose local, sin requests a la API de conteo.
   expect(seen.usageCalls).toContainEqual({ breakdown: 'summary' })
-  expect(seen.statuses.at(-1)).toBe('diet 19% · fijo 30.3k')
+
+  // `projects[cwd]` de ~/.claude.json es el scope local; `.mcp.json`, project.
+  const all = (await diet($, '--all')).text ?? ''
+  expect(all).toMatch(/brave-search \[local\] · 0 cargados/)
+  expect(all).toMatch(/FIJO\s+ccd_session \[host\]/)
 })
 
 test('/diet --json es parseable y los argumentos desconocidos muestran la ayuda', async ($, on) => {
@@ -108,11 +121,17 @@ test('/diet --json es parseable y los argumentos desconocidos muestran la ayuda'
 
   const report = JSON.parse((await diet($, '--json')).text ?? '') as DietReport
   expect(report.cwd).toBe('/work')
-  expect(report.servers.map(server => server.name)).toEqual(['firecrawl', 'claude_ai_Docs', 'brave-search', 'ableton'])
+  expect(report.servers.map(server => server.name)).toEqual([
+    'firecrawl',
+    'ccd_session',
+    'claude_ai_Docs',
+    'brave-search',
+    'ableton',
+  ])
   expect(JSON.stringify(report)).not.toContain('sk-secreto')
 
   expect((await diet($, 'nope')).text).toMatch(/Argumento desconocido[\s\S]*\/diet panel/)
-  expect((await diet($, 'status')).text).toBe('Uso: /diet status on|off')
+  expect((await diet($, 'banda')).text).toBe('Uso: /diet banda on|off')
 })
 
 test('cuenta llamadas MCP con sus errores, subagentes y skills', async ($, on) => {
@@ -149,7 +168,6 @@ test('el historial se guarda al cerrar un turno y produce candidatos', async ($,
 
   expect(Object.keys(saved().sessions).sort()).toEqual([String(STARTED), 'a', 'b'].sort())
   expect(saved().sessions[String(STARTED)]?.servers['brave-search']?.calls).toBe(1)
-  expect(seen.statuses.at(-1)).toMatch(/^diet 19% · fijo 30\.3k · \d candidatos$/)
 
   const text = (await diet($, '')).text ?? ''
   expect(text).toMatch(/CANDIDATO\s+firecrawl[^\n]*usado en 0\/3 sesiones/)
@@ -166,18 +184,68 @@ test('un turno de subagente no cuenta como turno de la sesión', async ($, on) =
   expect(report.turns).toBe(0)
 })
 
-test('/diet reset borra el historial y /diet status apaga la línea', async ($, on) => {
-  const seen = world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } } } })
+test('/diet reset borra el historial', async ($, on) => {
+  world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } } } })
   await start($)
   expect((await diet($, '')).text).toMatch(/CANDIDATO\s+firecrawl/)
-
   expect((await diet($, 'reset')).text).toMatch(/historial borrado/)
   expect((await diet($, '')).text).toMatch(/OBSERVAR\s+firecrawl/)
+})
 
-  expect((await diet($, 'status off')).text).toMatch(/oculta/)
-  expect(seen.statuses.at(-1)).toBe(undefined)
-  expect((await diet($, 'status on')).text).toMatch(/activada/)
-  expect(seen.statuses.at(-1)).toMatch(/^diet 19%/)
+test('la banda calla sin nada que hacer, avisa con candidatos y se puede apagar', async ($, on) => {
+  const seen = world(on)
+  await start($)
+  await diet($, '')
+
+  const quiet = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await quiet.find({ text: /diet/ })).toBe(undefined)
+  await quiet.unmount()
+
+  seen.store.set(HISTORY_KEY, { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } })
+  await diet($, '')
+  for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
+    const band = await $.ui.mount({ ...BAND, surface })
+    expect((await band.find({ type: 'Text', text: /candidatos/ }))?.text).toBe(
+      '● diet 6 candidatos a apagar · −10.7k por request · /diet',
+    )
+    await band.unmount()
+  }
+
+  expect((await diet($, 'banda off')).text).toMatch(/apagados/)
+  expect(seen.store.get('band')).toBe(false)
+  const off = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await off.find({ text: /candidatos/ })).toBe(undefined)
+  await off.unmount()
+  expect((await diet($, 'banda on')).text).toMatch(/activados/)
+})
+
+test('la fila de /diet se dibuja como etiqueta; una fila vieja queda como texto', async ($, on) => {
+  world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } } } })
+  await start($)
+  const text = (await diet($, '')).text ?? ''
+  const ROW = { plugin: 'context-diet', component: 'CommandOutput', requestId: 'm1' } as const
+  const props = { command: 'diet', args: '', text, isErrored: false }
+
+  for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
+    const ui = await $.ui.mount({ ...ROW, props, surface })
+    expect(await ui.find({ type: 'Text', text: /^Context Diet$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^~30\.3k$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /firecrawl.*8k.*CANDIDATO/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /App de Claude y plugins \(1\).* 1k .*FIJO/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /claude mcp remove -s user firecrawl/ })).toBeDefined()
+    // El resumen no lista lo de la app; --all sí.
+    expect(await ui.find({ type: 'Text', text: /ccd_session/ })).toBe(undefined)
+    await ui.unmount()
+  }
+
+  const all = await $.ui.mount({ ...ROW, props: { ...props, args: '--all' }, surface: 'terminal' })
+  expect(await all.find({ type: 'Text', text: /ccd_session/ })).toBeDefined()
+  await all.unmount()
+
+  // Otro texto (una fila anterior, la ayuda, el JSON) no es de este reporte.
+  const old = await $.ui.mount({ ...ROW, props: { ...props, text: 'Context Diet · 2020-01-01 00:00:00 UTC' }, surface: 'terminal' })
+  expect(await old.find({ type: 'Text', text: /^Context Diet$/ })).toBe(undefined)
+  await old.unmount()
 })
 
 test('el historial viejo o corrupto no rompe el reporte', async ($, on) => {
@@ -188,7 +256,7 @@ test('el historial viejo o corrupto no rompe el reporte', async ($, on) => {
   expect(NOW - 90 * DAY).toBeLessThan(NOW)
 })
 
-test('el panel dibuja el reporte en cada superficie y se actualiza', async ($, on) => {
+test('el panel dibuja la etiqueta en cada superficie y se actualiza', async ($, on) => {
   world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } } } })
   await start($)
 
@@ -199,9 +267,12 @@ test('el panel dibuja el reporte en cada superficie y se actualiza', async ($, o
       expect((await ui.find({ type: 'Text', text: /Sin medición/ }))?.text).toBe('Sin medición todavía.')
       await ui.press({ key: 'refresh' })
     }
-    expect(await ui.find({ type: 'Text', text: /CANDIDATO\s+firecrawl · 8k · 0 llamadas/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Context Diet$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /firecrawl.*CANDIDATO/ })).toBeDefined()
+    // El panel es el resumen: lo de la app va agregado en una fila.
+    expect(await ui.find({ type: 'Text', text: /ccd_session/ })).toBe(undefined)
+    expect(await ui.find({ type: 'Text', text: /App de Claude y plugins \(1\)/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /claude mcp remove -s user firecrawl/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Fijo por request: 30\.3k/ })).toBeDefined()
     await ui.unmount()
   }
 
