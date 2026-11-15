@@ -69,6 +69,18 @@ test('scope: config, conector de claude.ai, app, y configurado sin tools', () =>
 test('nombres legibles: un id de conector no se muestra crudo', () => {
   const id = '1a59c906-04da-521d-bda7-7f71b9f9e01c'
   expect(serverLabel(id)).toBe('conector 1a59c906')
+  // Sin otro nombre, sus tools lo identifican: ordenadas, tres como mucho.
+  expect(serverLabel(id, id, ['update', 'guide', 'batch', 'read'])).toBe('conector 1a59c906 (batch, guide, read…)')
+  expect(serverLabel(id, id, ['query'])).toBe('conector 1a59c906 (query)')
+  // En el reporte, la etiqueta junta todas las tools del conector, cargadas o no.
+  const usage = usageFixture()
+  const breakdown = usage.context.breakdown!
+  for (const [tool, isLoaded] of [['update', true], ['guide', false], ['batch', true], ['read', false]] as const) {
+    breakdown.mcpTools.push({ name: `mcp__${id}__${tool}`, serverName: id, tokens: 100, isLoaded })
+  }
+  const connector = server(build({ usage }).report, id)
+  expect(connector.label).toBe('conector 1a59c906 (batch, guide, read…)')
+  expect(connector.scope).toBe('connector')
   expect(serverLabel(id, 'Claude Docs')).toBe('Claude Docs')
   expect(serverLabel('claude_ai_Claude_Docs')).toBe('Claude Docs (claude.ai)')
   expect(serverLabel('firecrawl', 'firecrawl')).toBe('firecrawl')
