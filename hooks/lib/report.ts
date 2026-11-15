@@ -139,10 +139,21 @@ function scopeOf(name: string, scopes: Record<string, DietScope>): DietScope {
   return 'host'
 }
 
-/** Un nombre que se pueda leer: el que lista /mcp cuando dice más que la clave. */
-export function serverLabel(name: string, serverName?: string): string {
+const HINT_TOOLS = 3
+
+/**
+ * Un nombre que se pueda leer: el que lista /mcp cuando dice más que la clave.
+ * Un conector que solo llega con su id (así lo da la app de escritorio, y el
+ * motor no expone otro nombre) se reconoce por sus tools.
+ */
+export function serverLabel(name: string, serverName?: string, tools: readonly string[] = []): string {
   const shown = serverName && !UUID.test(serverName) ? serverName : name
-  if (UUID.test(shown)) return `conector ${shown.slice(0, 8)}`
+  if (UUID.test(shown)) {
+    const base = `conector ${shown.slice(0, 8)}`
+    if (tools.length === 0) return base
+    const hint = [...tools].sort().slice(0, HINT_TOOLS).join(', ')
+    return `${base} (${hint}${tools.length > HINT_TOOLS ? '…' : ''})`
+  }
   if (CLAUDE_AI.test(shown)) return `${shown.replace(CLAUDE_AI, '').replace(/_/g, ' ')} (claude.ai)`
   return shown
 }
@@ -174,13 +185,18 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
   })
   // Un server configurado puede no traer tools (desconectado): se lista igual.
   for (const name of Object.keys(input.scopes)) byName.set(name, blank(name))
+  const toolNames = new Map<string, string[]>()
   for (const tool of breakdown?.mcpTools ?? []) {
     // El nombre de la tool lleva la grafía con la que llegan los `tool.call`.
-    const name = parseMcpTool(tool.name)?.server ?? tool.serverName
+    const parsed = parseMcpTool(tool.name)
+    const name = parsed?.server ?? tool.serverName
     const server = byName.get(name) ?? byName.get(tool.serverName) ?? blank(name)
     byName.set(server.name, server)
+    const names = toolNames.get(server.name) ?? []
+    if (parsed) names.push(parsed.tool)
+    toolNames.set(server.name, names)
     server.isConnected = true
-    server.label = serverLabel(server.name, tool.serverName)
+    server.label = serverLabel(server.name, tool.serverName, names)
     server.tools += 1
     server.totalTokens += tool.tokens
     if (tool.isLoaded) {

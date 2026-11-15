@@ -38,7 +38,7 @@ Estado al 2026-11-14 · versión 1.1.0 · probado con Claude Code 2.1.325.
 - [x] `/diet` se dibuja como etiqueta nutricional: una cifra al frente, barra fijo / conversación / libre, de qué está hecho el fijo, colores por veredicto y barras proporcionales.
 - [x] Servers de la app y de plugins agregados en una línea y marcados `FIJO`: no tapan los propios ni se proponen para quitar.
 - [x] Lo diferido, en una línea; el detalle completo con `/diet --all`.
-- [x] Nombres legibles para conectores (`Claude Docs (claude.ai)` en vez de un id).
+- [x] Nombres legibles para conectores (`Claude Docs (claude.ai)` en vez de un id). Los que la app de escritorio solo da por id, el motor no los nombra: se muestran con sus tools (`conector 1a59c906 (batch, guide, read…)`).
 - [x] La línea de estado se reemplaza por una banda sobre el prompt que solo aparece cuando hay algo que hacer; `/diet banda on|off`.
 - [x] Tests en `tests/`, la carpeta que el motor incluye en su `tsconfig`.
 
@@ -60,7 +60,7 @@ Estado al 2026-11-14 · versión 1.1.0 · probado con Claude Code 2.1.325.
 ### Publicación
 - [ ] Ícono (`claude plugin validate` lo pide para el directorio).
 - [ ] Textos en inglés, o idioma configurable con `userConfig`.
-- [ ] CI que corra `claude plugin validate` y `claude plugin test`.
+- [x] CI que corra `claude plugin validate` y `claude plugin test`.
 
 ## Principios
 
