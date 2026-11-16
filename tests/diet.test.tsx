@@ -185,6 +185,22 @@ test('un turno de subagente no cuenta como turno de la sesión', async ($, on) =
   expect(report.turns).toBe(0)
 })
 
+test('tras un reinicio la sesión sigue contando desde lo guardado', async ($, on) => {
+  // El registro de esta misma sesión, de antes de que la app reiniciara.
+  const mine = { ...pastSession(0), startedAt: STARTED, turns: 4, servers: { firecrawl: { calls: 3, loadedTokens: 8000 } } }
+  const seen = world(on, { store: { [HISTORY_KEY]: { sessions: { [String(STARTED)]: mine } } } })
+  await start($)
+
+  await $.tool.call({ tool: 'mcp__firecrawl__scrape' } as never)
+  await $.turn.complete(TURN as never)
+
+  const report = JSON.parse((await diet($, '--json')).text ?? '') as DietReport
+  expect(report.servers.find(server => server.name === 'firecrawl')?.calls).toBe(4)
+  expect(report.turns).toBe(5)
+  const saved = (seen.store.get(HISTORY_KEY) as DietHistory).sessions[String(STARTED)]
+  expect([saved?.turns, saved?.servers.firecrawl?.calls]).toEqual([5, 4])
+})
+
 test('/diet reset borra el historial', async ($, on) => {
   world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } } } })
   await start($)
@@ -245,7 +261,8 @@ test('la fila de /diet se dibuja como etiqueta; una fila vieja queda como texto'
     const ui = await $.ui.mount({ ...ROW, props, surface })
     expect(await ui.find({ type: 'Text', text: /^Context Diet$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^~30\.3k$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /firecrawl.*8k.*CANDIDATO/ })).toBeDefined()
+    // Con su columna de historial: usado en 0 de 3 sesiones.
+    expect(await ui.find({ type: 'Text', text: /firecrawl \.+ 8k\s+0\/3\s+CANDIDATO/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /App de Claude y plugins \(1\).* 1k .*FIJO/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /claude mcp remove -s user firecrawl/ })).toBeDefined()
     // El resumen no lista lo de la app; --all sí.

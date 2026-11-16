@@ -4,6 +4,7 @@ import type { SessionUsage } from 'claude-code'
 import type {
   DietAgent,
   DietCategory,
+  DietCounter,
   DietEvidence,
   DietForecast,
   DietHistory,
@@ -98,6 +99,33 @@ export function sanitizeHistory(value: unknown): DietHistory {
     }
   }
   return { sessions }
+}
+
+/**
+ * Los contadores de la sesión, con lo que su registro guardado ya sabía. Los
+ * contadores viven en `$.state`, que se vacía si la app reinicia o la sesión
+ * se reanuda; sin esto el registro guardado se pisaba con ceros. Es un máximo
+ * por clave, así que aplicarlo de más no cambia nada.
+ */
+export function restoreUsage(counters: DietUsage, record: DietSessionRecord | undefined): DietUsage {
+  if (!record) return counters
+  const lift = (table: Record<string, DietCounter>, stored: Record<string, number>) => {
+    const next = { ...table }
+    for (const [key, calls] of Object.entries(stored)) {
+      const now = next[key]
+      if (typeof calls !== 'number' || calls <= (now?.calls ?? 0)) continue
+      next[key] = { calls, errors: now?.errors ?? 0, lastAt: now?.lastAt ?? record.lastAt }
+    }
+    return next
+  }
+  const serverCalls = Object.fromEntries(Object.entries(record.servers).map(([name, one]) => [name, one?.calls ?? 0]))
+  return {
+    ...counters,
+    turns: Math.max(counters.turns, record.turns),
+    servers: lift(counters.servers, serverCalls),
+    skillGroups: lift(counters.skillGroups, record.skillGroups),
+    skills: lift(counters.skills, record.skills),
+  }
 }
 
 function evidenceOf(
@@ -329,10 +357,12 @@ function currentRecord(
  * Construye el reporte y el historial ya actualizado con esta sesión.
  * La sesión en curso solo cuenta como evidencia si completó algún turno.
  */
-export function buildReport(input: ReportInput): { report: DietReport; history: DietHistory } {
+export function buildReport(input: ReportInput): { report: DietReport; history: DietHistory; counters: DietUsage } {
   const breakdown = input.usage.context.breakdown
   const id = String(input.usage.startedAt)
   const pruned = pruneHistory(input.history, input.now)
+  // Lo que el registro de esta sesión ya tenía no se pierde con un reinicio.
+  input = { ...input, counters: restoreUsage(input.counters, pruned.sessions[id]) }
 
   // Primera pasada sin evidencia, solo para saber qué hay presente ahora.
   const present = currentRecord(input, buildServers(input, EMPTY_HISTORY), buildSkillGroups(input, EMPTY_HISTORY))
@@ -400,5 +430,5 @@ export function buildReport(input: ReportInput): { report: DietReport; history: 
     },
     turns: input.counters.turns,
   }
-  return { report, history }
+  return { report, history, counters: input.counters }
 }

@@ -5,7 +5,15 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { DietCounter, DietHistory, DietReport, DietScope, DietUsage } from '../types'
-import { EMPTY_HISTORY, EMPTY_USAGE, buildReport, parseMcpTool, sanitizeHistory, skillGroupKey } from './lib/report'
+import {
+  EMPTY_HISTORY,
+  EMPTY_USAGE,
+  buildReport,
+  parseMcpTool,
+  restoreUsage,
+  sanitizeHistory,
+  skillGroupKey,
+} from './lib/report'
 import { SECTIONS, label, labelWidth } from './lib/label'
 import { renderReport, reportStamp, summarize } from './lib/render'
 
@@ -137,7 +145,9 @@ async function refresh($: Engine): Promise<DietReport> {
   ])
   const built = buildReport({ usage, counters, history, scopes, cwd, now })
   await update($, reportAtom, () => built.report)
-  if (counters.turns > 0) {
+  // Tras un reinicio los contadores vuelven de lo guardado: se siguen desde ahí.
+  if (built.counters !== counters) await update($, usageAtom, live => restoreUsage(live, built.history.sessions[String(usage.startedAt)]))
+  if (built.counters.turns > 0) {
     try {
       await $.store.set(HISTORY_KEY, built.history)
     } catch {
@@ -175,6 +185,14 @@ export const register: Register = on => {
       await update($, bandAtom, () => isOn)
     } catch {
       // Sin preferencia guardada, la banda queda apagada.
+    }
+    try {
+      // Una sesión reanudada recupera sus contadores antes de la primera llamada.
+      const [usage, history] = await Promise.all([$.session.usage(), loadHistory($)])
+      const record = history.sessions[String(usage.startedAt)]
+      if (record) await update($, usageAtom, live => restoreUsage(live, record))
+    } catch {
+      // Sin esto se recuperan en la primera medición.
     }
     return next(e)
   })

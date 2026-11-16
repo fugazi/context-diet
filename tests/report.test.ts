@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { buildReport, parseMcpTool, pruneHistory, sanitizeHistory, serverLabel } from '../hooks/lib/report'
+import { EMPTY_USAGE, buildReport, parseMcpTool, pruneHistory, restoreUsage, sanitizeHistory, serverLabel } from '../hooks/lib/report'
 import { leaderCells, splitCells } from '../hooks/lib/label'
 import { formatTokens, renderReport, summarize } from '../hooks/lib/render'
 import { DAY, NOW, counters, pastSession, usageFixture } from './fixtures'
@@ -230,6 +230,22 @@ test('la barra reparte todas sus celdas', () => {
   expect(splitCells([0.07, 0.19, 0.74], 50)).toEqual([4, 10, 36])
   expect(splitCells([0.001, 0, 0.999], 40)).toEqual([1, 0, 39])
   expect(splitCells([0.5, 0.5, 0], 9).reduce((sum, size) => sum + size, 0)).toBe(9)
+})
+
+test('una sesión reanudada recupera lo que su registro ya tenía', () => {
+  const usage = usageFixture({ tokens: 38100 })
+  const id = String(usage.startedAt)
+  const before = build({ usage, counters: { ...EMPTY_USAGE, turns: 5, servers: { firecrawl: { calls: 4, errors: 0, lastAt: NOW } }, skillGroups: { 'plugin:agent-skills': { calls: 2, errors: 0, lastAt: NOW } } } })
+  expect(before.history.sessions[id]?.servers.firecrawl?.calls).toBe(4)
+
+  // La app reinicia: contadores en cero, y luego una llamada nueva a otro server.
+  const after = build({ usage, history: before.history, counters: { ...EMPTY_USAGE, turns: 1, servers: { 'brave-search': { calls: 1, errors: 0, lastAt: NOW } } } })
+  const record = after.history.sessions[id]
+  expect([record?.turns, record?.servers.firecrawl?.calls, record?.servers['brave-search']?.calls]).toEqual([5, 4, 1])
+  expect(record?.skillGroups['plugin:agent-skills']).toBe(2)
+  expect(after.report.servers.find(server => server.name === 'firecrawl')?.verdict).toBe('used')
+  // Aplicarlo otra vez no suma nada.
+  expect(restoreUsage(after.counters, record)).toEqual(after.counters)
 })
 
 test('una fila con puntos guía mide el ancho exacto y recorta el nombre', () => {
