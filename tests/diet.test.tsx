@@ -286,9 +286,50 @@ test('el panel dibuja la etiqueta en cada superficie y se actualiza', async ($, 
     // El panel es el resumen: lo de la app va agregado en una fila.
     expect(await ui.find({ type: 'Text', text: /ccd_session/ })).toBe(undefined)
     expect(await ui.find({ type: 'Text', text: /App de Claude y plugins \(1\)/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /claude mcp remove -s user firecrawl/ })).toBeDefined()
+    // ACCIONES va plegado, con el ahorro en su cabecera.
+    expect(await ui.find({ type: 'Text', text: /−10\.7k por request/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /claude mcp remove -s user firecrawl/ })).toBe(undefined)
     await ui.unmount()
   }
 
   expect((await diet($, 'panel')).text).toBe('Context Diet: panel abierto.')
+})
+
+test('en el panel cada cabecera pliega su recuadro; la ayuda va en tablas', async ($, on) => {
+  world(on)
+  await start($)
+  await diet($, '')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /agent-skills/ })).toBeDefined()
+  // ACCIONES empieza plegado; un clic lo abre.
+  expect(await ui.find({ type: 'Text', text: /▸ ACCIONES/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /recorta .*CLAUDE\.md/ })).toBe(undefined)
+  await ui.press({ key: 'fold-actions' })
+  expect(await ui.find({ type: 'Text', text: /recorta .*CLAUDE\.md/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Desarrollado por Douglas Fugazi · https:\/\/douglasfugazi\.co/ })).toBeDefined()
+
+  // Plegado conserva la cabecera con su total y suelta las filas.
+  await ui.press({ key: 'fold-skills' })
+  expect(await ui.find({ type: 'Text', text: /agent-skills/ })).toBe(undefined)
+  expect(await ui.find({ type: 'Text', text: /▸ SKILLS/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /firecrawl/ })).toBeDefined()
+  await ui.press({ key: 'fold-skills' })
+  expect(await ui.find({ type: 'Text', text: /agent-skills/ })).toBeDefined()
+  expect(await ui.find({ text: /avisos/ })).toBe(undefined)
+  await ui.unmount()
+
+  // La ayuda se dibuja como markdown, con sus dos tablas.
+  const help = (await diet($, 'help')).text ?? ''
+  expect(help).toContain('| `/diet --all` |')
+  expect(help).toContain('| `/diet status on` | Muestra la línea de estado (viene apagada). |')
+  const row = await $.ui.mount({
+    plugin: 'context-diet',
+    component: 'CommandOutput',
+    requestId: 'h1',
+    props: { command: 'diet', args: 'help', text: help, isErrored: false },
+    surface: 'desktop',
+  })
+  expect(await row.find({ type: 'Markdown' })).toBeDefined()
+  await row.unmount()
 })

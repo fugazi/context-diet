@@ -2,7 +2,7 @@
 
 Mod de Claude Code que audita el **costo de contexto** de una sesión: qué MCPs, skills, agentes y archivos de memoria están activos, cuánto pesa cada uno en cada request, cuánto se usa de verdad y qué conviene quitar.
 
-> **Estado:** v1.1.0, probado con Claude Code 2.1.325. Repo privado de trabajo.
+> **Estado:** v1.2.0, probado con Claude Code 2.1.325. Repo privado de trabajo.
 
 ## Problema
 
@@ -11,15 +11,16 @@ El contexto no se gasta solo en la conversación. Antes del primer mensaje ya ha
 ## Qué hace
 
 ```text
-/diet                 la etiqueta de la sesión
+/diet                 el reporte de la sesión (resumen)
 /diet --all           con cada server, skill, agente y archivo
 /diet --json          el reporte como JSON
 /diet panel           panel en vivo junto al chat
-/diet banda on|off    avisos sobre el prompt (apagados por defecto)
+/diet status on|off   avisos sobre el prompt (apagados por defecto)
 /diet reset           borra el historial entre sesiones
+/diet help            los comandos y cómo leer los veredictos
 ```
 
-- **Etiqueta:** `/diet` dibuja el reporte como una etiqueta nutricional, con una barra fijo / conversación / libre y colores por veredicto.
+- **Tablero:** `/diet` dibuja el reporte en recuadros de color, uno por tema (fijo, lo que queda, MCP, skills, acciones), en monoespaciado y con filas de puntos guía. En el panel cada cabecera pliega su recuadro (teclas `1` a `5`); ACCIONES empieza plegado.
 - **Costo real:** usa el mismo desglose que `/context`, por server, skill, agente y archivo.
 - **Cargado vs diferido:** distingue lo que ocupa la ventana de lo que espera tras ToolSearch y cuesta 0.
 - **Lo tuyo primero:** los servers que aporta la app o un plugin van agregados en una línea; no se quitan desde tu config y no se juzgan.
@@ -27,7 +28,7 @@ El contexto no se gasta solo en la conversación. Antes del primer mensaje ya ha
 - **Historial:** recuerda 30 días de sesiones, así que un veredicto no depende de una sola.
 - **Veredicto:** `USADO`, `OCASIONAL`, `CANDIDATO`, `OBSERVAR`, `FIJO`. Solo es candidato lo que no se usó en 3 o más sesiones.
 - **Acción asistida:** da el comando exacto y el ahorro por request. Nunca desactiva nada solo.
-- **Banda por demanda:** apagada por defecto. Con `/diet banda on`, una fila sobre el prompt avisa cuando hay candidatos o la compactación está a 10 turnos o menos; se cierra con su × o con `/diet banda off`.
+- **Banda por demanda:** apagada por defecto. Con `/diet status on` (o `banda on`), una fila sobre el prompt avisa cuando hay candidatos o la compactación está a 10 turnos o menos; se cierra con su × o con `/diet status off`.
 
 El texto que queda en el transcript es un resumen corto:
 

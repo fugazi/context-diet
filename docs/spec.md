@@ -1,6 +1,6 @@
 # Context Diet — Spec técnica
 
-**Versión:** 1.1.0 · **Fecha:** 2026-11-15 · **Claude Code:** 2.1.325+
+**Versión:** 1.2.0 · **Fecha:** 2026-11-15 · **Claude Code:** 2.1.325+
 
 ## Objetivo
 
@@ -19,18 +19,19 @@ El mod registra un comando, un panel y una línea de estado. No registra tools, 
 /diet --all           con cada server, skill, agente y archivo
 /diet --json          el reporte como JSON (tipo DietReport)
 /diet panel           panel en vivo
-/diet banda on|off    avisos sobre el prompt (apagados por defecto)
+/diet status on|off   avisos sobre el prompt (apagados por defecto); `banda` es un alias
 /diet reset           borra el historial
+/diet help            los comandos y los veredictos, en dos tablas
 ```
 
 ## Presentación
 
 - **Texto** (`renderReport`): lo que devuelve `command.run`. Queda en el transcript y lo lee el modelo, así que el resumen es corto; `--all` lo expande.
-- **Etiqueta** (`label`): un hook `ui.render` sobre `CommandOutput` dibuja la fila de `/diet` como etiqueta nutricional. Se dibuja desde `$.state.printed`, el último reporte impreso; una fila cuyo texto no empieza con el sello de ese reporte queda como texto. Así una fila no cambia cuando el reporte se refresca al cierre de cada turno.
-- **Panel**: la misma etiqueta con detalle, leída de `$.state.report`, más un botón de actualizar.
-- **Banda** (`AbovePrompt`): apagada por defecto; tras `/diet banda on`, una fila que solo se dibuja si hay candidatos o si quedan 10 turnos o menos para compactar, con una × que la apaga. Reemplaza a la línea de estado, que repetía el porcentaje que Claude ya muestra.
+- **Etiqueta** (`label`): un hook `ui.render` sobre `CommandOutput` dibuja la fila de `/diet` como un tablero: un recuadro redondeado de color por tema (fijo, queda, MCP, skills, acciones), todo en monoespaciado, con filas de puntos guía y una barra fijo / conversación / libre hecha de cajas de color. La fila de `/diet help` se dibuja como `Markdown`, con sus dos tablas. Se dibuja desde `$.state.printed`, el último reporte impreso; una fila cuyo texto no empieza con el sello de ese reporte queda como texto. Así una fila no cambia cuando el reporte se refresca al cierre de cada turno.
+- **Panel**: el mismo tablero en modo resumen, leído de `$.state.report`, más un botón de actualizar. Cada cabecera es un botón (teclas `1` a `5`) que pliega su recuadro; lo plegado vive en `$.state.folded` y ACCIONES empieza plegado.
+- **Banda** (`AbovePrompt`): apagada por defecto; tras `/diet status on`, una fila que solo se dibuja si hay candidatos o si quedan 10 turnos o menos para compactar, con una × que la apaga. Reemplaza a la línea de estado, que repetía el porcentaje que Claude ya muestra.
 
-Los colores son claves del tema (`success`, `warning`, `suggestion`, `subtle`, `inactive`), así que siguen al tema de la persona. Las barras son caracteres de bloque: un mismo árbol sirve para terminal, escritorio, VS Code y móvil.
+Los colores son claves del tema (`success`, `warning`, `suggestion`, `merged`, `claude`, `subtle`, `inactive`), así que siguen al tema de la persona. Un mismo árbol sirve para terminal, escritorio, VS Code y móvil.
 
 ## Fuentes de datos
 

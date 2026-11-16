@@ -6,20 +6,40 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { DietCounter, DietHistory, DietReport, DietScope, DietUsage } from '../types'
 import { EMPTY_HISTORY, EMPTY_USAGE, buildReport, parseMcpTool, sanitizeHistory, skillGroupKey } from './lib/report'
-import { label, labelWidth } from './lib/label'
+import { SECTIONS, label, labelWidth } from './lib/label'
 import { renderReport, reportStamp, summarize } from './lib/render'
 
 const PANE = 'context-diet'
 const PANE_TITLE = 'Context Diet'
 const HISTORY_KEY = 'history-1'
 const BAND_KEY = 'band'
+/** La ayuda, como markdown: la fila de `/diet help` la dibuja en tablas. */
 const HELP = [
-  '/diet                 la etiqueta de la sesión',
-  '/diet --all           con cada server, skill, agente y archivo',
-  '/diet --json          el reporte como JSON',
-  '/diet panel           abre el panel en vivo',
-  '/diet banda on|off    avisos sobre el prompt (apagados por defecto)',
-  '/diet reset           borra el historial entre sesiones',
+  '**Comandos del mod**',
+  '',
+  '| Comando | Qué hace |',
+  '| --- | --- |',
+  '| `/diet` | Imprime el reporte completo: contexto, MCP, skills, agentes, memoria y acciones. |',
+  '| `/diet --all` | El reporte con el detalle de cada server, skill, agente y archivo de memoria. |',
+  '| `/diet --json` | El mismo reporte como JSON. |',
+  '| `/diet panel` | Abre un panel junto al chat que se actualiza solo; tiene un botón «Actualizar» (tecla `r`). |',
+  '| `/diet status on` | Muestra la línea de estado (viene apagada). |',
+  '| `/diet status off` | La oculta; la preferencia se recuerda entre sesiones. |',
+  '| `/diet reset` | Borra el historial entre sesiones; los veredictos vuelven a `OBSERVAR`. |',
+  '| `/diet help` | Lista estos comandos. |',
+  '',
+  'Todos se pueden lanzar mientras Claude está respondiendo, sin esperar a que termine el turno.',
+  '',
+  '**Cómo leer el reporte**',
+  '',
+  '| Veredicto | Significado |',
+  '| --- | --- |',
+  '| `USADO` | Se usó en esta sesión. |',
+  '| `OCASIONAL` | No se usó ahora, pero sí en otras sesiones. Nunca se propone quitarlo. |',
+  '| `CANDIDATO` | Sin uso en 3 o más sesiones. Trae el comando para quitarlo y el ahorro. |',
+  '| `OBSERVAR` | Sin uso, pero todavía con poca evidencia. |',
+  '| `FIJO` | Skills integradas o sincronizadas, que no puedes quitar. |',
+  '| `SIN TOOLS` | Server configurado que no aportó tools (desconectado o aún conectando). |',
 ].join('\n')
 
 // Cambia la etiqueta cuando cambie la forma: descarta lo que guardó una
@@ -28,6 +48,10 @@ const usageAtom = atom({ plugin: 'context-diet', key: 'usage' } as const, EMPTY_
 const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-2' })
 const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-2' })
 const bandAtom = atom({ plugin: 'context-diet', key: 'band' } as const, false)
+// ACCIONES empieza plegado: lo abre quien quiera verlo.
+const foldedAtom = atom({ plugin: 'context-diet', key: 'folded' } as const, ['actions'] as string[], {
+  shape: 'folded-1',
+})
 
 type Engine = EngineInterface
 
@@ -247,6 +271,11 @@ export const register: Register = on => {
   // La fila de `/diet` en el transcript, como etiqueta. Solo la del último
   // reporte impreso: una fila anterior, o de otra sesión, queda como texto.
   on('ui.render', { component: 'CommandOutput', props: { command: 'diet' } }, async ($, e, next) => {
+    // La ayuda (sola o tras un argumento desconocido) va como tablas.
+    if (!e.props.isErrored && e.props.text.endsWith(HELP)) {
+      const { Markdown } = $.ui.resolve(e)
+      return <Markdown text={e.props.text} />
+    }
     const report = await read($, printedAtom)
     if (!report || e.props.isErrored || !e.props.text.startsWith(reportStamp(report))) return next(e)
     return label($.ui.resolve(e), report, {
@@ -258,7 +287,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const kit = $.ui.resolve(e)
     const { Box, Text, Button } = kit
-    const report = await read($, reportAtom)
+    const [report, folded] = await Promise.all([read($, reportAtom), read($, foldedAtom)])
     const reload = <Button key="refresh" label="Actualizar" hotkey="r" onPress={() => void refresh($)} />
     if (!report) {
       return (
@@ -273,7 +302,14 @@ export const register: Register = on => {
     }
     return (
       <Box flexDirection="column">
-        {label(kit, report, { width: labelWidth(e.props.bodyColumns) })}
+        {label(kit, report, {
+          width: labelWidth(e.props.bodyColumns),
+          panel: {
+            folded: folded.filter(id => (SECTIONS as readonly string[]).includes(id)),
+            onFold: id =>
+              void update($, foldedAtom, now => (now.includes(id) ? now.filter(one => one !== id) : [...now, id])),
+          },
+        })}
         {reload}
       </Box>
     )

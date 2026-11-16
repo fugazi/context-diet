@@ -179,6 +179,8 @@ declare module 'claude-code' {
       printed: Shaped<DietReport | null>
       /** Si la persona pidió la banda sobre el prompt; apagada por defecto. */
       band: boolean
+      /** Los recuadros del panel que la persona plegó. */
+      folded: Shaped<string[]>
     }
   }
 }
