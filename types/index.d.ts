@@ -44,8 +44,13 @@ export type DietHistory = {
 
 /** Evidencia acumulada de un ítem a lo largo del historial. */
 export type DietEvidence = {
-  /** Sesiones (con al menos un turno) en las que estuvo presente. */
+  /**
+   * Sesiones en las que estuvo presente y que cuentan como evidencia: las de
+   * 3 turnos o más, y cualquiera en la que se usó.
+   */
   sessions: number
+  /** Días de calendario distintos entre esas sesiones. */
+  days: number
   /** De esas, en cuántas se usó. */
   usedSessions: number
   calls: number
@@ -166,7 +171,16 @@ export type DietReport = {
   agents: DietAgent[]
   memory: DietMemoryFile[]
   forecast: DietForecast
-  history: { sessions: number; days: number; minSessions: number }
+  history: {
+    /** Sesiones guardadas con al menos un turno. */
+    sessions: number
+    /** Días que abarca el historial. */
+    days: number
+    /** Días distintos con alguna sesión de `minTurns` turnos o más. */
+    evidenceDays: number
+    minDays: number
+    minTurns: number
+  }
   turns: number
 }
 

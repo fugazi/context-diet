@@ -130,9 +130,9 @@ export function skillLine(group: DietSkillGroup): string {
 }
 
 export function noActionsText(report: DietReport): string {
-  const missing = Math.max(0, report.history.minSessions - report.history.sessions)
+  const missing = Math.max(0, report.history.minDays - report.history.evidenceDays)
   return missing > 0
-    ? `aún sin candidatos: faltan ${missing} sesión(es) de historial para emitir veredictos`
+    ? `aún sin candidatos: faltan ${missing} día(s) con sesiones de ${report.history.minTurns}+ turnos para emitir veredictos`
     : 'sin candidatos: todo lo tuyo se usó alguna vez'
 }
 
@@ -256,7 +256,7 @@ export function renderDetail(report: DietReport): string {
   )
 
   lines.push(
-    `Historial: ${report.history.sessions} sesión(es) en ${report.history.days} día(s). \`CANDIDATO\` = sin uso en ${report.history.minSessions}+ sesiones. Tokens estimados como en /context.`,
+    `Historial: ${report.history.sessions} sesión(es) en ${report.history.days} día(s). \`CANDIDATO\` = sin uso en ${report.history.minDays}+ días distintos (sesiones de ${report.history.minTurns}+ turnos). Tokens estimados como en /context.`,
   )
   return lines.join('\n')
 }
@@ -323,7 +323,7 @@ export function renderReport(report: DietReport, options: { isDetailed?: boolean
   if (heavy.length) lines.push(`  recorta ${heavy.length} archivo(s) de memoria pesado(s): se envían enteros en cada request`)
   lines.push('')
   lines.push(
-    `Historial: ${report.history.sessions} sesión(es) en ${report.history.days} día(s). CANDIDATO = sin uso en ${report.history.minSessions}+ sesiones. Tokens estimados como en /context. Detalle: /diet --all.`,
+    `Historial: ${report.history.sessions} sesión(es) en ${report.history.days} día(s). CANDIDATO = sin uso en ${report.history.minDays}+ días distintos (sesiones de ${report.history.minTurns}+ turnos). Tokens estimados como en /context. Detalle: /diet --all.`,
   )
   return lines.join('\n')
 }

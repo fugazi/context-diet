@@ -1,6 +1,6 @@
 # Context Diet — Spec técnica
 
-**Versión:** 1.2.0 · **Fecha:** 2026-11-15 · **Claude Code:** 2.1.325+
+**Versión:** 1.3.0 · **Fecha:** 2026-11-15 · **Claude Code:** 2.1.325+
 
 ## Objetivo
 
@@ -75,7 +75,7 @@ Se aplican a servers MCP y a grupos de skills.
 |---|---|---|
 | `USADO` | Al menos una llamada en esta sesión. | — |
 | `OCASIONAL` | Sin uso ahora, usado en alguna sesión del historial. | — |
-| `CANDIDATO` | Sin uso en 3 o más sesiones en las que estuvo presente. | Comando para quitarlo. |
+| `CANDIDATO` | Sin uso en sesiones de 3 o más días distintos en las que estuvo presente. Solo cuentan como evidencia de no uso las sesiones de 3 turnos o más; un uso cuenta siempre. | Comando para quitarlo. |
 | `OBSERVAR` | Sin uso, pero con menos de 3 sesiones de evidencia. | — |
 | `FIJO` | Skills integradas, sincronizadas o de la organización, y servers que aporta la app o un plugin (scope `host`). | — |
 

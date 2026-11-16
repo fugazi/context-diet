@@ -2,7 +2,7 @@
 
 Mod de Claude Code que audita el **costo de contexto** de una sesión: qué MCPs, skills, agentes y archivos de memoria están activos, cuánto pesa cada uno en cada request, cuánto se usa de verdad y qué conviene quitar.
 
-> **Estado:** v1.2.0, probado con Claude Code 2.1.325. Repo privado de trabajo.
+> **Estado:** v1.3.0, probado con Claude Code 2.1.325. Repo privado de trabajo.
 
 ## Problema
 
@@ -26,7 +26,7 @@ El contexto no se gasta solo en la conversación. Antes del primer mensaje ya ha
 - **Lo tuyo primero:** los servers que aporta la app o un plugin van agregados en una línea; no se quitan desde tu config y no se juzgan.
 - **Uso real:** llamadas y errores por server, cargas por skill, usos por agente.
 - **Historial:** recuerda 30 días de sesiones, así que un veredicto no depende de una sola.
-- **Veredicto:** `USADO`, `OCASIONAL`, `CANDIDATO`, `OBSERVAR`, `FIJO`. Solo es candidato lo que no se usó en 3 o más sesiones.
+- **Veredicto:** `USADO`, `OCASIONAL`, `CANDIDATO`, `OBSERVAR`, `FIJO`. Solo es candidato lo que no se usó en sesiones de 3 o más días distintos; cuentan las sesiones de 3 turnos o más, así que varias sesiones cortas en un rato no bastan.
 - **Acción asistida:** da el comando exacto y el ahorro por request. Nunca desactiva nada solo.
 - **Banda por demanda:** apagada por defecto. Con `/diet status on` (o `banda on`), una fila sobre el prompt avisa cuando hay candidatos o la compactación está a 10 turnos o menos; se cierra con su × o con `/diet status off`.
 

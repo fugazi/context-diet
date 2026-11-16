@@ -119,7 +119,7 @@ test('/diet imprime el resumen con el desglose real y no lee secretos', async ($
   expect(text).toContain('sin costo ni uso: brave-search')
   expect(text).toMatch(/SIN TOOLS\s+ableton \[project\]/)
   expect(text).toContain('APP DE CLAUDE Y PLUGINS · 1 servers')
-  expect(text).toMatch(/faltan 3 sesión\(es\) de historial/)
+  expect(text).toMatch(/faltan 3 día\(s\) con sesiones de 3\+ turnos/)
   expect(text).not.toContain('sk-secreto')
   // Pide el desglose local, sin requests a la API de conteo.
   expect(seen.usageCalls).toContainEqual({ breakdown: 'summary' })
@@ -180,6 +180,11 @@ test('el historial se guarda al cerrar un turno y produce candidatos', async ($,
   expect(Object.keys(saved().sessions)).toEqual(['a', 'b'])
 
   await $.tool.call({ tool: 'mcp__brave-search__web' } as never)
+  await $.turn.complete(TURN as never)
+
+  // Un turno no basta: una sesión corta no prueba que algo no se use.
+  expect((await diet($, '')).text).toMatch(/OBSERVAR\s+firecrawl[^\n]*usado en 0\/2 sesiones/)
+  await $.turn.complete(TURN as never)
   await $.turn.complete(TURN as never)
 
   expect(Object.keys(saved().sessions).sort()).toEqual([String(STARTED), 'a', 'b'].sort())

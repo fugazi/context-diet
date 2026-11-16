@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { EMPTY_USAGE, buildReport, parseMcpTool, pruneHistory, restoreUsage, sanitizeHistory, serverLabel } from '../hooks/lib/report'
 import { leaderCells, splitCells } from '../hooks/lib/label'
 import { formatTokens, renderReport, summarize } from '../hooks/lib/render'
+import type { DietHistory } from '../types'
 import { DAY, NOW, counters, pastSession, usageFixture } from './fixtures'
 
 const SCOPES = { firecrawl: 'user', 'brave-search': 'project', ableton: 'user' } as const
@@ -104,11 +105,11 @@ test('sin historial nada es candidato: una sesión no es evidencia', () => {
   expect(report.totals.potentialSaving).toBe(0)
 })
 
-test('candidato: sin uso en 3+ sesiones, con acción y ahorro', () => {
+test('candidato: sin uso en 3+ días distintos, con acción y ahorro', () => {
   const history = { sessions: { a: pastSession(1), b: pastSession(2) } }
-  const { report } = build({ history, counters: counters({ turns: 2 }) })
+  const { report } = build({ history, counters: counters({ turns: 3 }) })
   const firecrawl = server(report, 'firecrawl')
-  expect(firecrawl.evidence.sessions).toBe(3)
+  expect([firecrawl.evidence.sessions, firecrawl.evidence.days]).toEqual([3, 3])
   expect(firecrawl.verdict).toBe('candidate')
   expect(firecrawl.saving).toBe(8000)
   expect(firecrawl.action).toBe('claude mcp remove -s user firecrawl')
@@ -117,6 +118,27 @@ test('candidato: sin uso en 3+ sesiones, con acción y ahorro', () => {
   expect(server(report, 'claude_ai_Docs').action).toMatch(/Conectores/)
   // Un server configurado pero sin tools nunca estuvo presente: no se juzga.
   expect(server(report, 'ableton').verdict).toBe('watch')
+})
+
+test('sesiones cortas o del mismo día no bastan para un candidato', () => {
+  const verdict = (history: DietHistory, turns = 0) =>
+    server(build({ history, counters: counters({ turns }) }).report, 'firecrawl')
+
+  // Cinco sesiones largas, todas el mismo día: un solo día de evidencia.
+  const sameDay = Object.fromEntries([1, 2, 3, 4, 5].map(n => [`s${n}`, { ...pastSession(1), startedAt: NOW - DAY + n * 60_000 }]))
+  expect([verdict({ sessions: sameDay }).evidence.days, verdict({ sessions: sameDay }).verdict]).toEqual([1, 'watch'])
+
+  // Tres días distintos, pero sesiones de un turno: no cuentan.
+  const short = { sessions: { a: { ...pastSession(1), turns: 1 }, b: { ...pastSession(2), turns: 2 }, c: { ...pastSession(3), turns: 1 } } }
+  expect([verdict(short).evidence.sessions, verdict(short).verdict]).toEqual([0, 'watch'])
+  expect(build({ history: short }).report.history).toEqual({ sessions: 3, days: 3, evidenceDays: 0, minDays: 3, minTurns: 3 })
+
+  // Un uso sí cuenta aunque la sesión fuera corta: pasa a ocasional.
+  const used = { sessions: { a: { ...pastSession(1, { servers: { firecrawl: { calls: 2, loadedTokens: 8000 } } }), turns: 1 } } }
+  expect(verdict(used).verdict).toBe('occasional')
+
+  // Tres días con sesiones de trabajo real: candidato.
+  expect(verdict({ sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } }).verdict).toBe('candidate')
 })
 
 test('usado ahora gana; usado antes es ocasional, nunca candidato', () => {

@@ -18,8 +18,13 @@ import type {
   DietVerdict,
 } from '../../types'
 
-/** Sesiones con al menos un turno necesarias para llamar algo `candidate`. */
-export const MIN_SESSIONS = 3
+/**
+ * Para llamar algo `candidate` hace falta no haberlo usado en sesiones de
+ * `MIN_DAYS` días distintos, y solo cuentan las de `MIN_TURNS` turnos o más:
+ * tres sesiones cortas en una mañana no dicen si algo se usa.
+ */
+export const MIN_DAYS = 3
+export const MIN_TURNS = 3
 export const HISTORY_DAYS = 30
 export const HISTORY_MAX_SESSIONS = 200
 /** Un archivo de memoria por encima de esto se marca como pesado. */
@@ -136,16 +141,27 @@ export function restoreUsage(counters: DietUsage, record: DietSessionRecord | un
   }
 }
 
+/** El día de calendario, en la hora local, en que empezó una sesión. */
+function dayKey(at: number): string {
+  const date = new Date(at)
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
+}
+
 function evidenceOf(
   history: DietHistory,
   pick: (record: DietSessionRecord) => number | undefined,
 ): DietEvidence {
-  const evidence: DietEvidence = { sessions: 0, usedSessions: 0, calls: 0, lastUsedAt: null }
+  const evidence: DietEvidence = { sessions: 0, days: 0, usedSessions: 0, calls: 0, lastUsedAt: null }
+  const days = new Set<string>()
   for (const record of Object.values(history.sessions)) {
     if (record.turns < 1) continue
     const calls = pick(record)
     if (calls === undefined) continue
+    // Un uso cuenta venga de donde venga; no haberlo usado solo dice algo en
+    // una sesión con trabajo de verdad.
+    if (calls <= 0 && record.turns < MIN_TURNS) continue
     evidence.sessions += 1
+    days.add(dayKey(record.startedAt))
     if (calls > 0) {
       evidence.usedSessions += 1
       evidence.calls += calls
@@ -154,13 +170,14 @@ function evidenceOf(
       }
     }
   }
+  evidence.days = days.size
   return evidence
 }
 
 function verdictOf(callsNow: number, evidence: DietEvidence): DietVerdict {
   if (callsNow > 0) return 'used'
   if (evidence.usedSessions > 0) return 'occasional'
-  if (evidence.sessions >= MIN_SESSIONS) return 'candidate'
+  if (evidence.days >= MIN_DAYS) return 'candidate'
   return 'watch'
 }
 
@@ -214,7 +231,7 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
     isConnected: false,
     calls: 0,
     errors: 0,
-    evidence: { sessions: 0, usedSessions: 0, calls: 0, lastUsedAt: null },
+    evidence: { sessions: 0, days: 0, usedSessions: 0, calls: 0, lastUsedAt: null },
     verdict: 'watch',
     saving: 0,
     action: null,
@@ -279,7 +296,7 @@ function buildSkillGroups(input: ReportInput, history: DietHistory): DietSkillGr
         skills: 0,
         tokens: 0,
         loads: 0,
-        evidence: { sessions: 0, usedSessions: 0, calls: 0, lastUsedAt: null },
+        evidence: { sessions: 0, days: 0, usedSessions: 0, calls: 0, lastUsedAt: null },
         verdict: 'watch',
         saving: 0,
         action: null,
@@ -434,7 +451,9 @@ export function buildReport(input: ReportInput): { report: DietReport; history: 
     history: {
       sessions: counted.length,
       days: stamps.length ? Math.max(1, Math.ceil((input.now - Math.min(...stamps)) / DAY_MS)) : 0,
-      minSessions: MIN_SESSIONS,
+      evidenceDays: new Set(counted.filter(record => record.turns >= MIN_TURNS).map(record => dayKey(record.startedAt))).size,
+      minDays: MIN_DAYS,
+      minTurns: MIN_TURNS,
     },
     turns: input.counters.turns,
   }

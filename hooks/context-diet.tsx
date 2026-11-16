@@ -45,7 +45,7 @@ const HELP = [
   '| --- | --- |',
   '| `USADO` | Se usó en esta sesión. |',
   '| `OCASIONAL` | No se usó ahora, pero sí en otras sesiones. Nunca se propone quitarlo. |',
-  '| `CANDIDATO` | Sin uso en 3 o más sesiones. Trae el comando para quitarlo y el ahorro. |',
+  '| `CANDIDATO` | Sin uso en 3 o más días distintos (cuentan las sesiones de 3 turnos o más). Trae el comando para quitarlo y el ahorro. |',
   '| `OBSERVAR` | Sin uso, pero todavía con poca evidencia. |',
   '| `FIJO` | Skills integradas o sincronizadas, que no puedes quitar. |',
   '| `SIN TOOLS` | Server configurado que no aportó tools (desconectado o aún conectando). |',
@@ -54,8 +54,8 @@ const HELP = [
 // Cambia la etiqueta cuando cambie la forma: descarta lo que guardó una
 // versión anterior, que sobrevive a un hot reload.
 const usageAtom = atom({ plugin: 'context-diet', key: 'usage' } as const, EMPTY_USAGE, { shape: 'usage-1' })
-const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-2' })
-const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-2' })
+const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-3' })
+const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-3' })
 const bandAtom = atom({ plugin: 'context-diet', key: 'band' } as const, false)
 // ACCIONES empieza plegado: lo abre quien quiera verlo.
 const foldedAtom = atom({ plugin: 'context-diet', key: 'folded' } as const, ['actions'] as string[], {
