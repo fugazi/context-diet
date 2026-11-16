@@ -75,7 +75,7 @@ Estado al 2026-11-14 · versión 1.1.0 · probado con Claude Code 2.1.325.
 - [ ] Historial por proyecto: un server puede ser inútil aquí y esencial en otro repo.
 
 ### Publicación
-- [x] Ícono (`claude plugin validate` lo pide para el directorio): `.claude-plugin/icon.png`, 1024×1024.
+- [x] Ícono cuadrado de 1024×1024, junto al manifest del plugin (`claude plugin validate` lo pide para el directorio).
 - [x] Textos en inglés y castellano, con la opción `language` de `userConfig` (inglés por defecto).
 - [x] CI que corra `claude plugin validate` y `claude plugin test`.
 

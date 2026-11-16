@@ -110,9 +110,26 @@ context-diet/
 └── ROADMAP.md
 ```
 
+## What the mod hooks
+
+The mod only observes. None of its hooks changes a tool call, a skill's text, a prompt or a setting, and it registers no tools, agents or prompt sections.
+
+| Hook | What it does |
+| --- | --- |
+| `session.start` | Registers the `/diet` command and restores this session's counters from its saved record. Passes the event on unchanged. |
+| `tool.call` | Lets the call run, then counts it when it is an MCP tool or a subagent. It reads the tool's name and whether it failed; never its arguments or its result. It does not deny or rewrite calls. |
+| `skill.prompt` | Counts which skill was loaded and passes its text on unchanged. |
+| `turn.complete` | Counts the turn, measures the context and saves the session's record to the history. |
+| `command.run` (`diet` only) | Answers `/diet` and its arguments. |
+| `ui.render` | Draws its own three things: the `/diet` row in the transcript, the panel, and the optional row above the prompt. |
+
 ## Privacy
 
-Everything stays on your machine. From the config files only the names of the MCP servers are read: never `env`, `headers` or arguments. The history stores names and counters.
+Everything stays on your machine: the mod makes no network requests and sends nothing anywhere.
+
+- **Files it reads:** `~/.claude.json` and the project's `.mcp.json`, to learn where each MCP server is configured (user, project or local). From them it takes only the server names, the keys of `mcpServers`. It never reads or keeps `env`, `headers`, arguments, tokens or any other value.
+- **Environment:** it reads `HOME`, only to find `~/.claude.json`.
+- **What it stores:** a history of server and skill names with their counters, in the plugin's own store on your machine. `/diet reset` clears it.
 
 ## Documentation
 
