@@ -246,7 +246,11 @@ export function renderDetail(report: DietReport): string {
     summary.actions.length + heavy.length === 0
       ? [noActionsText(report)]
       : table(['Ahorro', 'Qué hacer'], [
-          ...summary.actions.map(item => [`−${formatTokens(item.saving)}`, code(item.action ?? '')]),
+          // Solo un comando va como código; una indicación es prosa.
+          ...summary.actions.map(item => [
+            `−${formatTokens(item.saving)}`,
+            /^claude /.test(item.action ?? '') ? code(item.action ?? '') : (item.action ?? ''),
+          ]),
           ...heavy.map(file => [formatTokens(file.tokens), `recorta ${code(file.path)}: se envía entero en cada request`]),
         ]),
   )

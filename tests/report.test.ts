@@ -246,6 +246,10 @@ test('una sesión reanudada recupera lo que su registro ya tenía', () => {
   expect(after.report.servers.find(server => server.name === 'firecrawl')?.verdict).toBe('used')
   // Aplicarlo otra vez no suma nada.
   expect(restoreUsage(after.counters, record)).toEqual(after.counters)
+
+  // Un nombre de config con espacios vuelve bajo la grafía de los `tool.call`.
+  const spaced = { ...pastSession(0), servers: { 'my server': { calls: 5, loadedTokens: 0 } } }
+  expect(restoreUsage(EMPTY_USAGE, spaced).servers.my_server?.calls).toBe(5)
 })
 
 test('una fila con puntos guía mide el ancho exacto y recorta el nombre', () => {
@@ -284,6 +288,8 @@ test('texto: resumen corto por defecto y todo con --all', () => {
   expect(all).toContain('| reviewer | plugin | 700 | 0 |')
   expect(all).toContain('| `/work/CLAUDE.md` | Project | 1.2k |  |')
   expect(all).toContain('| −8k | `claude mcp remove -s user firecrawl` |')
+  // Una indicación que no es un comando va como prosa, no como código.
+  expect(all).toMatch(/\| mueve la carpeta de la skill "\w+" fuera de ~\/\.claude\/skills \|/)
   expect(formatTokens(1_500_000)).toBe('1.5M')
   expect(formatTokens(null)).toBe('?')
 })

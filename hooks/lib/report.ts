@@ -56,6 +56,11 @@ export type ReportInput = {
   now: number
 }
 
+/** La grafía con la que llegan los `tool.call` de un server: su clave en los contadores. */
+export function serverKey(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, '_')
+}
+
 export function skillGroupKey(source: string, pluginName?: string | null): string {
   return pluginName ? `plugin:${pluginName}` : source
 }
@@ -118,7 +123,10 @@ export function restoreUsage(counters: DietUsage, record: DietSessionRecord | un
     }
     return next
   }
-  const serverCalls = Object.fromEntries(Object.entries(record.servers).map(([name, one]) => [name, one?.calls ?? 0]))
+  // El registro guarda el nombre del config; los contadores, el de los `tool.call`.
+  const serverCalls = Object.fromEntries(
+    Object.entries(record.servers).map(([name, one]) => [serverKey(name), one?.calls ?? 0]),
+  )
   return {
     ...counters,
     turns: Math.max(counters.turns, record.turns),
@@ -236,8 +244,7 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
   }
   for (const server of byName.values()) {
     // Un nombre de config con espacios llega normalizado en los `tool.call`.
-    const counter =
-      input.counters.servers[server.name] ?? input.counters.servers[server.name.replace(/[^a-zA-Z0-9_-]/g, '_')]
+    const counter = input.counters.servers[serverKey(server.name)] ?? input.counters.servers[server.name]
     server.calls = counter?.calls ?? 0
     server.errors = counter?.errors ?? 0
     server.evidence = evidenceOf(history, record => record.servers[server.name]?.calls)
@@ -394,7 +401,8 @@ export function buildReport(input: ReportInput): { report: DietReport; history: 
     .sort((a, b) => b.tokens - a.tokens)
   const forecast = buildForecast(input, categories)
   const candidates = [...servers, ...skillGroups].filter(item => item.verdict === 'candidate')
-  const stamps = Object.values(history.sessions).map(record => record.startedAt)
+  const counted = Object.values(history.sessions).filter(record => record.turns > 0)
+  const stamps = counted.map(record => record.startedAt)
   const instructions = categories
     .filter(row => /mcp server instructions/i.test(row.name))
     .reduce((sum, row) => sum + row.tokens, 0)
@@ -424,7 +432,7 @@ export function buildReport(input: ReportInput): { report: DietReport; history: 
     memory,
     forecast,
     history: {
-      sessions: Object.values(history.sessions).filter(record => record.turns > 0).length,
+      sessions: counted.length,
       days: stamps.length ? Math.max(1, Math.ceil((input.now - Math.min(...stamps)) / DAY_MS)) : 0,
       minSessions: MIN_SESSIONS,
     },
