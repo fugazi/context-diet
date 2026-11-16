@@ -51,7 +51,7 @@ El mod no registra tools, skills ni secciones de prompt: medir tokens no debe ag
 
 ## Instalación
 
-Marketplace (requiere acceso al repo privado):
+Agregar Marketplace en Claude:
 
 ```text
 /plugin install context-diet --marketplace fugazi/context-diet
