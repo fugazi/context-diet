@@ -4,7 +4,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { DietCounter, DietHistory, DietReport, DietScope, DietUsage } from '../types'
+import type { DietCounter, DietHistory, DietLang, DietReport, DietScope, DietUsage } from '../types'
 import {
   EMPTY_HISTORY,
   EMPTY_USAGE,
@@ -15,6 +15,7 @@ import {
   sanitizeHistory,
   skillGroupKey,
 } from './lib/report'
+import { pickLang, strings } from './lib/i18n'
 import { SECTIONS, label, labelWidth } from './lib/label'
 import { formatTokens, renderReport, reportStamp, summarize } from './lib/render'
 
@@ -22,40 +23,11 @@ const PANE = 'context-diet'
 const PANE_TITLE = 'Context Diet'
 const HISTORY_KEY = 'history-1'
 const BAND_KEY = 'band'
-/** La ayuda, como markdown: la fila de `/diet help` la dibuja en tablas. */
-const HELP = [
-  '**Comandos del mod**',
-  '',
-  '| Comando | Qué hace |',
-  '| --- | --- |',
-  '| `/diet` | Imprime el reporte completo: contexto, MCP, skills, agentes, memoria y acciones. |',
-  '| `/diet --all` | El reporte con el detalle de cada server, skill, agente y archivo de memoria. |',
-  '| `/diet --json` | El mismo reporte como JSON. |',
-  '| `/diet panel` | Abre un panel junto al chat que se actualiza solo; tiene un botón «Actualizar» (tecla `r`). |',
-  '| `/diet status on` | Muestra la línea de estado (viene apagada). |',
-  '| `/diet status off` | La oculta; la preferencia se recuerda entre sesiones. |',
-  '| `/diet reset` | Borra el historial entre sesiones; los veredictos vuelven a `OBSERVAR`. |',
-  '| `/diet help` | Lista estos comandos. |',
-  '',
-  'Todos se pueden lanzar mientras Claude está respondiendo, sin esperar a que termine el turno.',
-  '',
-  '**Cómo leer el reporte**',
-  '',
-  '| Veredicto | Significado |',
-  '| --- | --- |',
-  '| `USADO` | Se usó en esta sesión. |',
-  '| `OCASIONAL` | No se usó ahora, pero sí en otras sesiones. Nunca se propone quitarlo. |',
-  '| `CANDIDATO` | Sin uso en 3 o más días distintos (cuentan las sesiones de 3 turnos o más). Trae el comando para quitarlo y el ahorro. |',
-  '| `OBSERVAR` | Sin uso, pero todavía con poca evidencia. |',
-  '| `FIJO` | Skills integradas o sincronizadas, que no puedes quitar. |',
-  '| `SIN TOOLS` | Server configurado que no aportó tools (desconectado o aún conectando). |',
-].join('\n')
-
 // Cambia la etiqueta cuando cambie la forma: descarta lo que guardó una
 // versión anterior, que sobrevive a un hot reload.
 const usageAtom = atom({ plugin: 'context-diet', key: 'usage' } as const, EMPTY_USAGE, { shape: 'usage-1' })
-const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-3' })
-const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-3' })
+const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-4' })
+const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-4' })
 const bandAtom = atom({ plugin: 'context-diet', key: 'band' } as const, false)
 // ACCIONES empieza plegado: lo abre quien quiera verlo.
 const foldedAtom = atom({ plugin: 'context-diet', key: 'folded' } as const, ['actions'] as string[], {
@@ -135,7 +107,7 @@ async function loadHistory($: Engine): Promise<DietHistory | null> {
  * `isFresh` (lo pide una persona, no el cierre de un turno) relee los configs
  * de MCP, que pueden cambiar a mitad de sesión.
  */
-async function refresh($: Engine, isFresh = false): Promise<DietReport> {
+async function refresh($: Engine, lang: DietLang, isFresh = false): Promise<DietReport> {
   let cwd = '.'
   try {
     cwd = await $.session.cwd()
@@ -149,7 +121,7 @@ async function refresh($: Engine, isFresh = false): Promise<DietReport> {
     collectScopes($, cwd, isFresh),
     $.clock.now(),
   ])
-  const built = buildReport({ usage, counters, history: stored ?? EMPTY_HISTORY, scopes, cwd, now })
+  const built = buildReport({ usage, counters, history: stored ?? EMPTY_HISTORY, scopes, cwd, now, lang })
   await update($, reportAtom, () => built.report)
   // Tras un reinicio los contadores vuelven de lo guardado: se siguen desde ahí.
   if (built.counters !== counters) await update($, usageAtom, live => restoreUsage(live, built.history.sessions[String(usage.startedAt)]))
@@ -178,17 +150,22 @@ async function setBand($: Engine, isOn: boolean): Promise<void> {
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // La opción `language` del plugin; un cambio recarga el módulo con la nueva.
+  const lang = pickLang(options?.language)
+  const t = strings(lang)
+  const HELP = t.help
+
   on('session.start', async ($, e, next) => {
     try {
       await $.command.register({
         name: 'diet',
-        description: 'Audita el costo de contexto de MCPs, skills, agentes y memoria',
-        argumentHint: '[--all | --json | panel | banda on|off | reset]',
+        description: t.command.description,
+        argumentHint: '[--all | --json | panel | status on|off | reset | help]',
         immediate: true,
       })
     } catch (error) {
-      $.ui.log(`Context Diet: /diet no registrado: ${String(error)}`)
+      $.ui.log(t.command.notRegistered(String(error)))
     }
     try {
       // Solo por demanda: sin un `/diet banda on` guardado, no hay banda.
@@ -258,7 +235,7 @@ export const register: Register = on => {
           turns: usage.turns + 1,
           samples: context.tokens === undefined ? usage.samples : [...usage.samples, context.tokens].slice(-20),
         }))
-        await refresh($)
+        await refresh($, lang)
       } catch {
         // El turno termina igual.
       }
@@ -271,27 +248,22 @@ export const register: Register = on => {
     if (args === 'help' || args === '--help') return { text: HELP }
     if (args === 'reset') {
       await $.store.delete(HISTORY_KEY)
-      await refresh($)
-      return { text: 'Context Diet: historial borrado.' }
+      await refresh($, lang)
+      return { text: t.command.reset }
     }
     const [word, wanted] = args.split(/\s+/)
     if (word === 'banda' || word === 'status') {
-      if (wanted !== 'on' && wanted !== 'off') return { text: 'Uso: /diet banda on|off' }
+      if (wanted !== 'on' && wanted !== 'off') return { text: t.command.bandUsage }
       await setBand($, wanted === 'on')
-      return {
-        text:
-          wanted === 'on'
-            ? 'Context Diet: avisos sobre el prompt activados. Se cierran con la × o con /diet banda off.'
-            : 'Context Diet: avisos sobre el prompt apagados.',
-      }
+      return { text: wanted === 'on' ? t.command.bandOn : t.command.bandOff }
     }
-    const report = await refresh($, true)
+    const report = await refresh($, lang, true)
     if (args === 'panel' || args === '--panel') {
       const { isPlaced } = await $.ui.open({ id: PANE, title: PANE_TITLE })
-      return { text: isPlaced ? 'Context Diet: Panel visual abierto.' : renderReport(report) }
+      return { text: isPlaced ? t.command.paneOpen : renderReport(report) }
     }
     if (args === '--json') return { text: JSON.stringify(report, null, 2) }
-    if (args && args !== '--all') return { text: `Argumento desconocido: "${e.args.trim()}"\n\n${HELP}` }
+    if (args && args !== '--all') return { text: `${t.command.unknown(e.args.trim())}\n\n${HELP}` }
     // La fila se dibuja de este reporte, no del que se refresca en cada turno.
     await update($, printedAtom, () => report)
     return { text: renderReport(report, { isDetailed: args === '--all' }) }
@@ -317,17 +289,17 @@ export const register: Register = on => {
     const kit = $.ui.resolve(e)
     const { Box, Text, Button } = kit
     const [report, folded] = await Promise.all([read($, reportAtom), read($, foldedAtom)])
-    const reload = <Button key="refresh" label="Actualizar" hotkey="r" onPress={() => void refresh($, true).catch(() => undefined)} />
+    const reload = <Button key="refresh" label={t.panel.refresh} hotkey="r" onPress={() => void refresh($, lang, true).catch(() => undefined)} />
     if (!report) {
       return (
         <Box flexDirection="column">
-          <Text dimColor>Sin medición todavía.</Text>
+          <Text dimColor>{t.panel.unmeasuredYet}</Text>
           {reload}
         </Box>
       )
     }
     if (e.props.placement === 'widget') {
-      return <Text>{summarize(report).alert ?? `fijo ${formatTokens(report.totals.fixed)} por request`}</Text>
+      return <Text>{summarize(report).alert ?? t.panel.widget(formatTokens(report.totals.fixed))}</Text>
     }
     return (
       <Box flexDirection="column" gap={1} paddingBottom={1}>

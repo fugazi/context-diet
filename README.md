@@ -2,7 +2,7 @@
 
 Mod de Claude Code que audita el **costo de contexto** de una sesión: qué MCPs, skills, agentes y archivos de memoria están activos, cuánto pesa cada uno en cada request, cuánto se usa de verdad y qué conviene quitar.
 
-> **Estado:** v1.3.0, probado con Claude Code 2.1.325. Repo privado de trabajo.
+> **Estado:** v1.4.0, probado con Claude Code 2.1.325. Repo privado de trabajo.
 
 ## Problema
 
@@ -29,6 +29,16 @@ El contexto no se gasta solo en la conversación. Antes del primer mensaje ya ha
 - **Veredicto:** `USADO`, `OCASIONAL`, `CANDIDATO`, `OBSERVAR`, `FIJO`. Solo es candidato lo que no se usó en sesiones de 3 o más días distintos; cuentan las sesiones de 3 turnos o más, así que varias sesiones cortas en un rato no bastan.
 - **Acción asistida:** da el comando exacto y el ahorro por request. Nunca desactiva nada solo.
 - **Banda por demanda:** apagada por defecto. Con `/diet status on` (o `banda on`), una fila sobre el prompt avisa cuando hay candidatos o la compactación está a 10 turnos o menos; se cierra con su × o con `/diet status off`.
+
+## Idioma
+
+Los textos del reporte, el panel y la ayuda están en inglés y en castellano. El idioma es la opción `language` del plugin (`en` o `es`); viene en inglés. Se cambia desde `/config`, o en `settings.json`:
+
+```json
+{ "pluginConfigs": { "context-diet": { "options": { "language": "es" } } } }
+```
+
+Los ejemplos de este README están en castellano.
 
 El texto que queda en el transcript es un resumen corto:
 

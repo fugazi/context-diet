@@ -2,7 +2,8 @@
 // lo que queda, MCP, skills, acciones), con filas de puntos guía. En el panel
 // cada cabecera pliega su recuadro. Un mismo árbol para cada superficie.
 import type { DietReport, DietVerdict } from '../../types'
-import { VERDICT_LABEL, formatTokens, noActionsText, summarize } from './render'
+import { LANGS, strings } from './i18n'
+import { formatTokens, noActionsText, summarize } from './render'
 
 /** La tabla de elementos de la superficie, de `$.ui.resolve(e)`. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,14 +20,6 @@ const SECTION_COLOR: Record<DietSection, string> = {
   mcp: 'suggestion',
   skills: 'merged',
   actions: 'claude',
-}
-
-const SECTION_LEGEND: Record<DietSection, string> = {
-  fixed: 'fijo',
-  left: 'queda',
-  mcp: 'mcp',
-  skills: 'skills',
-  actions: 'acciones',
 }
 
 /** Lo que el panel añade a la etiqueta: lo que se puede pulsar. */
@@ -63,7 +56,9 @@ export function historyCell(evidence: { sessions: number; usedSessions: number }
 }
 
 /** Ancho de la columna de veredicto: el del más largo. */
-const TAG_CELLS = Math.max(...Object.values(VERDICT_LABEL).map(text => text.length))
+const TAG_CELLS = Math.max(
+  ...LANGS.flatMap(lang => [...Object.values(strings(lang).verdict), strings(lang).noTools]).map(text => text.length),
+)
 
 /** Ancho interior de la etiqueta para las columnas disponibles. */
 export function labelWidth(columns: number | undefined): number {
@@ -122,6 +117,8 @@ export function label(
   const { Box, Text, Button } = kit
   const panel = Button ? options.panel : undefined
   const width = options.width
+  const t = strings(report.lang)
+  const p = t.panel
   const summary = summarize(report)
   const { forecast, totals } = report
   const connected = report.servers.filter(server => server.isConnected)
@@ -176,11 +173,11 @@ export function label(
   /** Los títulos de las columnas de una lista con veredicto, sobre sus valores. */
   const columns = () => (
     <Text mono dimColor wrap="truncate-end">
-      {'tokens'.padStart(width - TAIL_CELLS)}
+      {p.columns.tokens.padStart(width - TAIL_CELLS)}
       {'  '}
-      {'usado'.padStart(HISTORY_CELLS)}
+      {p.columns.used.padStart(HISTORY_CELLS)}
       {'  '}
-      {'veredicto'.padStart(TAG_CELLS)}
+      {p.columns.verdict.padStart(TAG_CELLS)}
     </Text>
   )
 
@@ -238,9 +235,10 @@ export function label(
   const heavy = report.memory.filter(file => file.isHeavy)
   const hasOwn = servers.length > 0 || summary.missing.length > 0
   const turnsColor = forecast.turnsLeft !== null && forecast.turnsLeft <= 10 ? 'warning' : 'success'
-  const leftMeta = forecast.turnsLeft !== null ? `~${forecast.turnsLeft} turnos` : `${formatTokens(forecast.headroom)} libres`
+  const leftMeta = forecast.turnsLeft !== null ? p.turnsMeta(forecast.turnsLeft) : p.freeMeta(formatTokens(forecast.headroom))
   const hasActions = summary.actions.length > 0 || heavy.length > 0
-  const actionsMeta = totals.potentialSaving > 0 ? `−${formatTokens(totals.potentialSaving)} por request` : hasActions ? 'pendientes' : 'nada pendiente'
+  const actionsMeta =
+    totals.potentialSaving > 0 ? p.savingMeta(formatTokens(totals.potentialSaving)) : hasActions ? p.pending : p.nothingPending
   const ownLoaded = summary.shown.reduce((sum, server) => sum + server.loadedTokens, 0)
 
   return (
@@ -249,26 +247,25 @@ export function label(
         <Text mono bold>
           Context Diet
         </Text>
-        {row('MODELO EN USO', report.model || 'sin dato', { isDim: true })}
+        {row(p.model, report.model || p.noModel, { isDim: true })}
         <Text mono wrap="truncate-end">
           {SECTIONS.map((id, index) => (
             <Text mono color={SECTION_COLOR[id]}>
-              {index ? '  ' : ''}■ {SECTION_LEGEND[id]}
+              {index ? '  ' : ''}■ {p.legend[id]}
             </Text>
           ))}
         </Text>
-        {state('autocompactar', forecast.isAutoCompactEnabled)}
+        {state(p.autoCompact, forecast.isAutoCompactEnabled)}
       </Box>
 
-      {card('fixed', 'FIJO · por request', `~${formatTokens(totals.fixed)}`, () => [
+      {card('fixed', p.fixedTitle, `~${formatTokens(totals.fixed)}`, () => [
         <Text mono dimColor wrap="wrap">
-          Lo que Claude carga antes de leer tu mensaje: tools, skills e instrucciones. Se vuelve a enviar en cada
-          request.
+          {p.fixedIntro}
         </Text>,
         dashes(),
-        row('Fijo por request', `~${formatTokens(totals.fixed)}`, { color: FIXED_COLOR, isStrong: true }),
-        row('Conversación', formatTokens(forecast.conversation), { color: CONVERSATION_COLOR, isStrong: true }),
-        row('Límite de contexto del modelo', formatTokens(report.window)),
+        row(p.fixed, `~${formatTokens(totals.fixed)}`, { color: FIXED_COLOR, isStrong: true }),
+        row(p.conversation, formatTokens(forecast.conversation), { color: CONVERSATION_COLOR, isStrong: true }),
+        row(p.window, formatTokens(report.window)),
         <Box flexDirection="row" width={width} height={1}>
           {fixedCells > 0 && <Box width={fixedCells} height={1} backgroundColor={FIXED_COLOR} />}
           {conversationCells > 0 && <Box width={conversationCells} height={1} backgroundColor={CONVERSATION_COLOR} />}
@@ -276,95 +273,93 @@ export function label(
         </Box>,
         <Box flexDirection="row" justifyContent="space-between" width={width}>
           <Text mono color={FIXED_COLOR}>
-            ■ {percent(summary.share.fixed)} fijo
+            ■ {percent(summary.share.fixed)} {p.shareFixed}
           </Text>
           <Text mono color={CONVERSATION_COLOR}>
-            ■ {percent(summary.share.conversation)} conversación
+            ■ {percent(summary.share.conversation)} {p.shareConversation}
           </Text>
           <Text mono dimColor>
-            ■ {percent(summary.share.free)} libre
+            ■ {percent(summary.share.free)} {p.shareFree}
           </Text>
         </Box>,
         dashes(),
         <Text mono bold>
-          De qué está hecho el fijo
+          {p.madeOf}
         </Text>,
         ...parts.map(part => row(part.label, formatTokens(part.tokens))),
         otherParts.length > 0 &&
-          row(`Otros (${otherParts.length})`, formatTokens(otherParts.reduce((sum, part) => sum + part.tokens, 0)), {
+          row(p.others(otherParts.length), formatTokens(otherParts.reduce((sum, part) => sum + part.tokens, 0)), {
             isDim: true,
           }),
       ])}
 
-      {card('left', `QUEDA · ${forecast.isAutoCompactEnabled ? 'hasta compactar' : 'hasta llenar el contexto'}`, leftMeta, () => [
-        row('Espacio libre', formatTokens(forecast.headroom)),
-        forecast.perTurn !== null && row('Gasto medio por turno', `~${formatTokens(forecast.perTurn)}`),
+      {card('left', p.leftTitle(forecast.isAutoCompactEnabled), leftMeta, () => [
+        row(p.free, formatTokens(forecast.headroom)),
+        forecast.perTurn !== null && row(p.perTurn, `~${formatTokens(forecast.perTurn)}`),
         forecast.turnsLeft !== null
-          ? row('Turnos que te quedan', `~${forecast.turnsLeft}`, { color: turnsColor, isStrong: true })
-          : row('Turnos que te quedan', 'sin medir', { isDim: true }),
+          ? row(p.turnsLeft, `~${forecast.turnsLeft}`, { color: turnsColor, isStrong: true })
+          : row(p.turnsLeft, p.unmeasured, { isDim: true }),
         <Text mono dimColor wrap="wrap">
-          {forecast.turnsLeft === null ? 'El ritmo se mide tras un par de turnos. ' : ''}
-          {forecast.isAutoCompactEnabled
-            ? 'Al agotarse, Claude resume la conversación para seguir y se pierde detalle.'
-            : 'Al agotarse, la conversación no puede continuar.'}
+          {forecast.turnsLeft === null ? p.paceNote : ''}
+          {forecast.isAutoCompactEnabled ? p.endAuto : p.endManual}
         </Text>,
       ])}
 
-      {card('mcp', 'MCP · tus servidores', `${formatTokens(ownLoaded)} cargados`, () => [
+      {card('mcp', p.mcpTitle, p.loaded(formatTokens(ownLoaded)), () => [
         columns(),
         !hasOwn && summary.idle.length === 0 && (
           <Text mono dimColor>
-            Ninguno en tu config.
+            {p.noServers}
           </Text>
         ),
         ...servers.map(server =>
           row(server.calls > 0 ? `${server.label} ${server.calls}×` : server.label, formatTokens(server.loadedTokens), {
             mark: '●',
             color: VERDICT_COLOR[server.verdict],
-            tag: VERDICT_LABEL[server.verdict],
+            tag: t.verdict[server.verdict],
             history: historyCell(server.evidence),
           }),
         ),
-        ...summary.missing.map(server => row(server.label, '?', { mark: '○', color: 'error', tag: 'SIN TOOLS' })),
+        ...summary.missing.map(server => row(server.label, '?', { mark: '○', color: 'error', tag: t.noTools })),
         !options.isDetailed && summary.idle.length > 0 && (
           <Text mono dimColor wrap="wrap">
-            Sin costo ni uso: {summary.idle.map(server => server.label).join(', ')}
+            {p.idle(summary.idle.map(server => server.label).join(', '))}
           </Text>
         ),
         hasOwn && dashes(),
         summary.host.servers > 0 &&
-          row(`App de Claude y plugins (${summary.host.servers})`, formatTokens(summary.host.loadedTokens), {
+          row(p.host(summary.host.servers), formatTokens(summary.host.loadedTokens), {
             isDim: true,
             color: VERDICT_COLOR.info,
-            tag: VERDICT_LABEL.info,
+            tag: t.verdict.info,
           }),
         ...hostServers.map(server =>
           row(`  ${server.label}`, formatTokens(server.loadedTokens), { isDim: true, tag: `${server.calls}×` }),
         ),
-        row(`Diferidos (${summary.deferred.servers}), 0 por request`, formatTokens(summary.deferred.tokens), {
+        row(p.deferred(summary.deferred.servers), formatTokens(summary.deferred.tokens), {
           isDim: true,
           tag: '',
         }),
       ])}
 
-      {card('skills', 'SKILLS · en el listado', formatTokens(totals.skills), () => [
+      {card('skills', p.skillsTitle, formatTokens(totals.skills), () => [
         columns(),
         ...skillRows.map(group =>
           row(group.skills > 1 ? `${group.label} (${group.skills})` : group.label, formatTokens(group.tokens), {
             mark: '●',
             color: VERDICT_COLOR[group.verdict],
-            tag: VERDICT_LABEL[group.verdict],
+            tag: t.verdict[group.verdict],
             history: FIXED_VERDICTS.has(group.verdict) && group.evidence.usedSessions === 0 ? '' : historyCell(group.evidence),
           }),
         ),
         otherSkills.length > 0 &&
-          row(`  +${otherSkills.length} más`, formatTokens(otherSkills.reduce((sum, group) => sum + group.tokens, 0)), {
+          row(p.more(otherSkills.length), formatTokens(otherSkills.reduce((sum, group) => sum + group.tokens, 0)), {
             isDim: true,
             tag: '',
           }),
       ])}
 
-      {card('actions', 'ACCIONES · qué hacer', actionsMeta, () => [
+      {card('actions', p.actionsTitle, actionsMeta, () => [
         !hasActions && (
           <Text mono dimColor wrap="wrap">
             {noActionsText(report)}
@@ -383,21 +378,17 @@ export function label(
             <Text mono bold color="warning">
               {formatTokens(file.tokens)}{' '}
             </Text>
-            recorta {file.path}
+            {p.trim(file.path)}
           </Text>
         )),
       ])}
 
       <Box flexDirection="column" paddingX={2} width={width + 4}>
         <Text mono dimColor wrap="wrap">
-          «usado» = sesiones en que se usó / sesiones del historial. La de ahora cuenta al cerrar su primer turno.
+          {p.history(report.history.sessions)}
         </Text>
         <Text mono dimColor wrap="wrap">
-          Historial: {report.history.sessions} {report.history.sessions === 1 ? 'sesión' : 'sesiones'} · Para conocer
-          más comandos: /diet help
-        </Text>
-        <Text mono dimColor wrap="wrap">
-          Desarrollado por Douglas Fugazi · https://douglasfugazi.co
+          {p.credit}
         </Text>
       </Box>
     </Box>

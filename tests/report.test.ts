@@ -16,6 +16,7 @@ function build(options: Partial<Parameters<typeof buildReport>[0]> = {}) {
     scopes: SCOPES,
     cwd: '/work',
     now: NOW,
+    lang: 'es',
     ...options,
   })
 }
@@ -69,10 +70,11 @@ test('scope: config, conector de claude.ai, app, y configurado sin tools', () =>
 
 test('nombres legibles: un id de conector no se muestra crudo', () => {
   const id = '1a59c906-04da-521d-bda7-7f71b9f9e01c'
-  expect(serverLabel(id)).toBe('conector 1a59c906')
+  expect(serverLabel(id, undefined, [], 'es')).toBe('conector 1a59c906')
+  expect(serverLabel(id)).toBe('connector 1a59c906')
   // Sin otro nombre, sus tools lo identifican: ordenadas, tres como mucho.
-  expect(serverLabel(id, id, ['update', 'guide', 'batch', 'read'])).toBe('conector 1a59c906 (batch, guide, read…)')
-  expect(serverLabel(id, id, ['query'])).toBe('conector 1a59c906 (query)')
+  expect(serverLabel(id, id, ['update', 'guide', 'batch', 'read'], 'es')).toBe('conector 1a59c906 (batch, guide, read…)')
+  expect(serverLabel(id, id, ['query'], 'es')).toBe('conector 1a59c906 (query)')
   // En el reporte, la etiqueta junta todas las tools del conector, cargadas o no.
   const usage = usageFixture()
   const breakdown = usage.context.breakdown!

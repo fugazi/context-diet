@@ -1,5 +1,6 @@
 // El reporte como texto plano, y el resumen que comparten texto y dibujo.
-import type { DietEvidence, DietReport, DietServer, DietSkillGroup, DietVerdict } from '../../types'
+import type { DietEvidence, DietLang, DietReport, DietServer, DietSkillGroup } from '../../types'
+import { strings } from './i18n'
 
 export function formatTokens(value: number | null | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '?'
@@ -8,28 +9,10 @@ export function formatTokens(value: number | null | undefined): string {
   return String(Math.round(value))
 }
 
-export const VERDICT_LABEL: Record<DietVerdict, string> = {
-  used: 'USADO',
-  occasional: 'OCASIONAL',
-  candidate: 'CANDIDATO',
-  watch: 'OBSERVAR',
-  info: 'FIJO',
-}
-
-/** Las filas de /context, en castellano; una fila nueva conserva su nombre. */
-const CATEGORY_LABEL: Record<string, string> = {
-  'system prompt': 'Prompt del sistema',
-  'system tools': 'Tools del sistema',
-  'mcp tools': 'Tools MCP cargadas',
-  'mcp server instructions': 'Instrucciones MCP',
-  'custom agents': 'Agentes',
-  skills: 'Skills',
-  'memory files': 'Memoria',
-}
-
-export function evidenceText(evidence: DietEvidence): string {
-  if (evidence.sessions === 0) return 'sin historial'
-  return `usado en ${evidence.usedSessions}/${evidence.sessions} sesiones`
+export function evidenceText(evidence: DietEvidence, lang?: DietLang): string {
+  const t = strings(lang)
+  if (evidence.sessions === 0) return t.noHistory
+  return t.usedIn(evidence.usedSessions, evidence.sessions)
 }
 
 /** La primera línea del texto: identifica qué reporte imprimió una fila. */
@@ -61,6 +44,7 @@ export type DietSummary = {
 }
 
 export function summarize(report: DietReport): DietSummary {
+  const t = strings(report.lang)
   const { forecast } = report
   const total = Math.max(forecast.threshold, forecast.used, 1)
   const connected = report.servers.filter(server => server.isConnected)
@@ -72,10 +56,9 @@ export function summarize(report: DietReport): DietSummary {
 
   let alert: string | null = null
   if (report.totals.candidates > 0) {
-    const count = report.totals.candidates
-    alert = `${count} candidato${count === 1 ? '' : 's'} a apagar · −${formatTokens(report.totals.potentialSaving)} por request`
+    alert = t.alertCandidates(report.totals.candidates, formatTokens(report.totals.potentialSaving))
   } else if (forecast.turnsLeft !== null && forecast.turnsLeft <= 10) {
-    alert = `~${forecast.turnsLeft} turnos hasta ${forecast.isAutoCompactEnabled ? 'la compactación' : 'llenar la ventana'}`
+    alert = t.alertTurns(forecast.turnsLeft, forecast.isAutoCompactEnabled)
   }
 
   return {
@@ -87,7 +70,7 @@ export function summarize(report: DietReport): DietSummary {
     fixedPercent: forecast.used > 0 ? Math.round((forecast.fixed / forecast.used) * 100) : 0,
     composition: report.categories
       .filter(row => row.kind === 'used' && !/^messages$/i.test(row.name) && row.tokens > 0)
-      .map(row => ({ label: CATEGORY_LABEL[row.name.toLowerCase()] ?? row.name, tokens: row.tokens }))
+      .map(row => ({ label: t.category[row.name.toLowerCase()] ?? row.name, tokens: row.tokens }))
       .sort((a, b) => b.tokens - a.tokens),
     shown: own.filter(matters),
     idle: own.filter(server => !matters(server)),
@@ -110,30 +93,37 @@ export function summarize(report: DietReport): DietSummary {
 }
 
 export function forecastText(report: DietReport): string {
+  const t = strings(report.lang)
   const { forecast } = report
-  const target = forecast.isAutoCompactEnabled ? 'la compactación' : 'llenar la ventana'
-  const room = `${formatTokens(forecast.headroom)} hasta ${target}`
-  if (forecast.perTurn === null || forecast.turnsLeft === null) return `${room} (sin ritmo medido aún)`
-  return `${room} · ~${formatTokens(forecast.perTurn)}/turno → ~${forecast.turnsLeft} turnos`
+  const room = t.forecast(formatTokens(forecast.headroom), forecast.isAutoCompactEnabled)
+  if (forecast.perTurn === null || forecast.turnsLeft === null) return `${room} ${t.forecastUnmeasured}`
+  return `${room} · ${t.forecastPace(formatTokens(forecast.perTurn), forecast.turnsLeft)}`
 }
 
-export function serverLine(server: DietServer): string {
-  const errors = server.errors ? ` (${server.errors} con error)` : ''
-  const history = server.scope === 'host' ? '' : ` · ${evidenceText(server.evidence)}`
-  return `${VERDICT_LABEL[server.verdict].padEnd(10)}${server.label} [${server.scope}] · ${formatTokens(server.loadedTokens)} cargados (${server.loadedTools}/${server.tools} tools) · ${formatTokens(server.deferredTokens)} diferidos · ${server.calls} llamadas${errors}${history}`
+export function serverLine(server: DietServer, lang?: DietLang): string {
+  const t = strings(lang)
+  const history = server.scope === 'host' ? '' : ` · ${evidenceText(server.evidence, lang)}`
+  const cost = t.serverLine(
+    formatTokens(server.loadedTokens),
+    `${server.loadedTools}/${server.tools}`,
+    formatTokens(server.deferredTokens),
+    server.calls,
+    server.errors,
+  )
+  return `${t.verdict[server.verdict].padEnd(10)}${server.label} [${server.scope}] · ${cost}${history}`
 }
 
-export function skillLine(group: DietSkillGroup): string {
+export function skillLine(group: DietSkillGroup, lang?: DietLang): string {
+  const t = strings(lang)
   const count = group.skills > 1 ? ` · ${group.skills} skills` : ''
   const kind = group.pluginName ? 'plugin' : group.source
-  return `${VERDICT_LABEL[group.verdict].padEnd(10)}${group.label} [${kind}]${count} · ${formatTokens(group.tokens)} · ${group.loads} cargas · ${evidenceText(group.evidence)}`
+  return `${t.verdict[group.verdict].padEnd(10)}${group.label} [${kind}]${count} · ${formatTokens(group.tokens)} · ${t.loads(group.loads)} · ${evidenceText(group.evidence, lang)}`
 }
 
 export function noActionsText(report: DietReport): string {
+  const t = strings(report.lang)
   const missing = Math.max(0, report.history.minDays - report.history.evidenceDays)
-  return missing > 0
-    ? `aún sin candidatos: faltan ${missing} día(s) con sesiones de ${report.history.minTurns}+ turnos para emitir veredictos`
-    : 'sin candidatos: todo lo tuyo se usó alguna vez'
+  return missing > 0 ? t.noActionsYet(missing, report.history.minTurns) : t.noActions
 }
 
 /** Una celda de tabla markdown: sin saltos de línea ni barras sueltas. */
@@ -154,54 +144,55 @@ const code = (text: string) => `\`${text}\``
  * la fila del transcript dibuja como dibuja cualquier respuesta.
  */
 export function renderDetail(report: DietReport): string {
+  const t = strings(report.lang)
+  const d = t.detail
   const summary = summarize(report)
   const { forecast, totals } = report
-  const target = forecast.isAutoCompactEnabled ? 'compactar' : 'llenar el contexto'
-  const history = (evidence: DietEvidence) => evidenceText(evidence)
-  const lines: string[] = [`${reportStamp(report)}${report.model ? ` · ${report.model}` : ''} · detalle`, '']
+  const history = (evidence: DietEvidence) => evidenceText(evidence, report.lang)
+  const lines: string[] = [`${reportStamp(report)}${report.model ? ` · ${report.model}` : ''} · ${d.tag}`, '']
   const section = (title: string, note: string, body: string[]) => {
     lines.push(`**${title}**${note ? ` · ${note}` : ''}`, '', ...body, '')
   }
 
   const percent = report.percent == null ? '' : ` (${report.percent}%)`
-  section('Contexto', `fijo ${summary.fixedPercent}% de lo usado`, table(['Concepto', 'Tokens'], [
-    ['Fijo por request', `~${formatTokens(totals.fixed)}`],
-    ['Conversación', formatTokens(forecast.conversation)],
-    ['En uso', `${formatTokens(report.tokens ?? forecast.used)} de ${formatTokens(report.window)}${percent}`],
-    [`Espacio libre hasta ${target}`, formatTokens(forecast.headroom)],
-    ['Gasto medio por turno', forecast.perTurn === null ? 'sin medir' : `~${formatTokens(forecast.perTurn)}`],
-    ['Turnos que te quedan', forecast.turnsLeft === null ? 'sin medir' : `~${forecast.turnsLeft}`],
+  section(d.context, d.fixedShare(summary.fixedPercent), table([d.concept, d.tokens], [
+    [d.fixed, `~${formatTokens(totals.fixed)}`],
+    [d.conversation, formatTokens(forecast.conversation)],
+    [d.inUse, `${d.inUseValue(formatTokens(report.tokens ?? forecast.used), formatTokens(report.window))}${percent}`],
+    [d.freeUntil(forecast.isAutoCompactEnabled), formatTokens(forecast.headroom)],
+    [d.perTurn, forecast.perTurn === null ? d.unmeasured : `~${formatTokens(forecast.perTurn)}`],
+    [d.turnsLeft, forecast.turnsLeft === null ? d.unmeasured : `~${forecast.turnsLeft}`],
   ]))
 
-  section('De qué está hecho el fijo', '', table(['Parte', 'Tokens'], summary.composition.map(part => [part.label, formatTokens(part.tokens)])))
+  section(d.madeOf, '', table([d.part, d.tokens], summary.composition.map(part => [part.label, formatTokens(part.tokens)])))
 
   const own = [...summary.shown, ...summary.idle]
   section(
-    'Tus servidores MCP',
+    d.servers,
     `${own.length + summary.missing.length}`,
     own.length + summary.missing.length === 0
-      ? ['Ninguno en tu config.']
-      : table(['Veredicto', 'Server', 'Origen', 'Cargados', 'Tools', 'Diferidos', 'Llamadas', 'Historial'], [
+      ? [d.noServers]
+      : table(d.serverHead, [
           ...own.map(server => [
-            code(VERDICT_LABEL[server.verdict]),
+            code(t.verdict[server.verdict]),
             server.label,
             server.scope,
             formatTokens(server.loadedTokens),
             `${server.loadedTools}/${server.tools}`,
             formatTokens(server.deferredTokens),
-            server.errors ? `${server.calls} (${server.errors} con error)` : server.calls,
+            server.errors ? d.withErrors(server.calls, server.errors) : server.calls,
             history(server.evidence),
           ]),
-          ...summary.missing.map(server => [code('SIN TOOLS'), server.label, server.scope, '?', '?', '?', 0, 'desconectado o aún conectando']),
+          ...summary.missing.map(server => [code(t.noTools), server.label, server.scope, '?', '?', '?', 0, t.disconnected]),
         ]),
   )
 
   const host = report.servers.filter(one => one.isConnected && one.scope === 'host')
   if (host.length) {
     section(
-      'App de Claude y plugins',
-      `${host.length} servers · ${formatTokens(summary.host.loadedTokens)} cargados · fijo, no se quita desde tu config`,
-      table(['Server', 'Cargados', 'Tools', 'Diferidos', 'Llamadas'], host.map(server => [
+      d.host,
+      d.hostNote(host.length, formatTokens(summary.host.loadedTokens)),
+      table(d.hostHead, host.map(server => [
         server.label,
         formatTokens(server.loadedTokens),
         `${server.loadedTools}/${server.tools}`,
@@ -210,10 +201,10 @@ export function renderDetail(report: DietReport): string {
       ])),
     )
   }
-  lines.push(`Diferido: ${summary.deferred.servers} servers · ${formatTokens(summary.deferred.tokens)} tras ToolSearch · 0 por request`, '')
+  lines.push(d.deferred(summary.deferred.servers, formatTokens(summary.deferred.tokens)), '')
 
-  section('Skills', `${formatTokens(totals.skills)} en el listado`, table(['Veredicto', 'Grupo', 'Origen', 'Skills', 'Tokens', 'Cargas', 'Historial'], summary.skills.map(group => [
-    code(VERDICT_LABEL[group.verdict]),
+  section(d.skills, d.skillsNote(formatTokens(totals.skills)), table(d.skillHead, summary.skills.map(group => [
+    code(t.verdict[group.verdict]),
     group.label,
     group.pluginName ? 'plugin' : group.source,
     group.skills,
@@ -223,7 +214,7 @@ export function renderDetail(report: DietReport): string {
   ])))
 
   if (report.agents.length) {
-    section('Agentes', `${report.agents.length} · ${formatTokens(totals.agents)}`, table(['Agente', 'Origen', 'Tokens', 'Usos'], report.agents.map(agent => [
+    section(d.agents, `${report.agents.length} · ${formatTokens(totals.agents)}`, table(d.agentHead, report.agents.map(agent => [
       agent.agentType,
       agent.source,
       formatTokens(agent.tokens),
@@ -231,34 +222,37 @@ export function renderDetail(report: DietReport): string {
     ])))
   }
   if (report.memory.length) {
-    section('Memoria', `${report.memory.length} · ${formatTokens(totals.memory)}`, table(['Archivo', 'Tipo', 'Tokens', 'Estado'], report.memory.map(file => [
+    section(d.memory, `${report.memory.length} · ${formatTokens(totals.memory)}`, table(d.memoryHead, report.memory.map(file => [
       code(file.path),
       file.type,
       formatTokens(file.tokens),
-      file.isHeavy ? code('PESADO') : '',
+      file.isHeavy ? code(t.heavy) : '',
     ])))
   }
 
   const heavy = report.memory.filter(file => file.isHeavy)
   section(
-    'Acciones',
-    summary.actions.length ? `ahorro potencial ${formatTokens(totals.potentialSaving)} por request` : '',
+    d.actions,
+    summary.actions.length ? d.saving(formatTokens(totals.potentialSaving)) : '',
     summary.actions.length + heavy.length === 0
       ? [noActionsText(report)]
-      : table(['Ahorro', 'Qué hacer'], [
+      : table(d.actionHead, [
           // Solo un comando va como código; una indicación es prosa.
           ...summary.actions.map(item => [
             `−${formatTokens(item.saving)}`,
             /^claude /.test(item.action ?? '') ? code(item.action ?? '') : (item.action ?? ''),
           ]),
-          ...heavy.map(file => [formatTokens(file.tokens), `recorta ${code(file.path)}: se envía entero en cada request`]),
+          ...heavy.map(file => [formatTokens(file.tokens), d.trim(code(file.path))]),
         ]),
   )
 
-  lines.push(
-    `Historial: ${report.history.sessions} sesión(es) en ${report.history.days} día(s). \`CANDIDATO\` = sin uso en ${report.history.minDays}+ días distintos (sesiones de ${report.history.minTurns}+ turnos). Tokens estimados como en /context.`,
-  )
+  lines.push(historyNote(report, code(t.verdict.candidate)))
   return lines.join('\n')
+}
+
+function historyNote(report: DietReport, candidate: string): string {
+  const { history } = report
+  return strings(report.lang).historyNote(history.sessions, history.days, history.minDays, history.minTurns, candidate)
 }
 
 /**
@@ -267,6 +261,8 @@ export function renderDetail(report: DietReport): string {
  */
 export function renderReport(report: DietReport, options: { isDetailed?: boolean } = {}): string {
   if (options.isDetailed) return renderDetail(report)
+  const t = strings(report.lang)
+  const x = t.text
   const summary = summarize(report)
   const { forecast, totals } = report
   const lines: string[] = []
@@ -275,55 +271,48 @@ export function renderReport(report: DietReport, options: { isDetailed?: boolean
 
   const percent = report.percent == null ? '' : ` (${report.percent}%)`
   const live = formatTokens(report.tokens ?? forecast.used)
-  lines.push(`FIJO ${formatTokens(totals.fixed)} por request · ${summary.fixedPercent}% de lo usado`)
-  lines.push(`  en uso      ${live} / ${formatTokens(report.window)}${percent}`)
-  lines.push(`  pronóstico  ${forecastText(report)}`)
-  lines.push(`  hecho de    ${summary.composition.map(part => `${part.label} ${formatTokens(part.tokens)}`).join(' · ')}`)
+  const pad = Math.max(x.inUse.length, x.forecast.length, x.madeOf.length) + 2
+  lines.push(x.fixed(formatTokens(totals.fixed), summary.fixedPercent))
+  lines.push(`  ${x.inUse.padEnd(pad)}${live} / ${formatTokens(report.window)}${percent}`)
+  lines.push(`  ${x.forecast.padEnd(pad)}${forecastText(report)}`)
+  lines.push(`  ${x.madeOf.padEnd(pad)}${summary.composition.map(part => `${part.label} ${formatTokens(part.tokens)}`).join(' · ')}`)
   lines.push('')
 
   const own = summary.shown.length + summary.idle.length
-  lines.push(`TUS SERVIDORES MCP (${own})`)
-  if (!own && !summary.missing.length) lines.push('  ninguno')
-  for (const server of summary.shown) lines.push(`  ${serverLine(server)}`)
-  if (summary.idle.length) {
-    lines.push(`  sin costo ni uso: ${summary.idle.map(server => server.label).join(', ')} (diferidos, 0 por request)`)
-  }
+  lines.push(x.servers(own))
+  if (!own && !summary.missing.length) lines.push(`  ${x.none}`)
+  for (const server of summary.shown) lines.push(`  ${serverLine(server, report.lang)}`)
+  if (summary.idle.length) lines.push(`  ${x.idle(summary.idle.map(server => server.label).join(', '))}`)
   for (const server of summary.missing) {
-    lines.push(`  ${'SIN TOOLS'.padEnd(10)}${server.label} [${server.scope}] · desconectado o aún conectando`)
+    lines.push(`  ${t.noTools.padEnd(10)}${server.label} [${server.scope}] · ${t.disconnected}`)
   }
   lines.push('')
 
-  if (summary.host.servers) {
-    lines.push(
-      `APP DE CLAUDE Y PLUGINS · ${summary.host.servers} servers · ${formatTokens(summary.host.loadedTokens)} cargados · fijo, no se quita desde tu config`,
-    )
-  }
-  lines.push(`DIFERIDO · ${summary.deferred.servers} servers · ${formatTokens(summary.deferred.tokens)} tras ToolSearch · 0 por request`)
+  if (summary.host.servers) lines.push(x.host(summary.host.servers, formatTokens(summary.host.loadedTokens)))
+  lines.push(x.deferred(summary.deferred.servers, formatTokens(summary.deferred.tokens)))
   lines.push('')
 
-  lines.push(`SKILLS · ${formatTokens(totals.skills)} en el listado`)
+  lines.push(x.skills(formatTokens(totals.skills)))
   const skills = summary.skills.slice(0, 5)
-  for (const group of skills) lines.push(`  ${skillLine(group)}`)
-  if (summary.skills.length > skills.length) lines.push(`  … ${summary.skills.length - skills.length} más`)
+  for (const group of skills) lines.push(`  ${skillLine(group, report.lang)}`)
+  if (summary.skills.length > skills.length) lines.push(`  ${x.more(summary.skills.length - skills.length)}`)
   lines.push('')
 
   const heavy = report.memory.filter(file => file.isHeavy)
   lines.push(
-    `AGENTES ${report.agents.length} · ${formatTokens(totals.agents)}   MEMORIA ${report.memory.length} · ${formatTokens(totals.memory)}${heavy.length ? ` (${heavy.length} pesado${heavy.length === 1 ? '' : 's'})` : ''}`,
+    x.agentsMemory(report.agents.length, formatTokens(totals.agents), report.memory.length, formatTokens(totals.memory), heavy.length),
   )
-  for (const file of heavy) lines.push(`  PESADO ${file.path} [${file.type}] · ${formatTokens(file.tokens)}`)
+  for (const file of heavy) lines.push(`  ${t.heavy} ${file.path} [${file.type}] · ${formatTokens(file.tokens)}`)
   lines.push('')
 
-  lines.push('ACCIONES')
+  lines.push(x.actions)
   if (!summary.actions.length) lines.push(`  ${noActionsText(report)}`)
   else {
-    lines.push(`  ahorro potencial: ${formatTokens(totals.potentialSaving)} por request`)
+    lines.push(`  ${x.saving(formatTokens(totals.potentialSaving))}`)
     for (const item of summary.actions) lines.push(`  ${item.action}   # −${formatTokens(item.saving)}`)
   }
-  if (heavy.length) lines.push(`  recorta ${heavy.length} archivo(s) de memoria pesado(s): se envían enteros en cada request`)
+  if (heavy.length) lines.push(`  ${x.trimMemory(heavy.length)}`)
   lines.push('')
-  lines.push(
-    `Historial: ${report.history.sessions} sesión(es) en ${report.history.days} día(s). CANDIDATO = sin uso en ${report.history.minDays}+ días distintos (sesiones de ${report.history.minTurns}+ turnos). Tokens estimados como en /context. Detalle: /diet --all.`,
-  )
+  lines.push(`${historyNote(report, t.verdict.candidate)} ${t.moreDetail}`)
   return lines.join('\n')
 }

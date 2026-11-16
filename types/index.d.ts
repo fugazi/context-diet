@@ -43,6 +43,9 @@ export type DietHistory = {
 }
 
 /** Evidencia acumulada de un ítem a lo largo del historial. */
+/** El idioma de los textos: la opción `language` del plugin. */
+export type DietLang = 'en' | 'es'
+
 export type DietEvidence = {
   /**
    * Sesiones en las que estuvo presente y que cuentan como evidencia: las de
@@ -146,6 +149,8 @@ export type DietCategory = {
 }
 
 export type DietReport = {
+  /** El idioma en que se armaron sus etiquetas y acciones. */
+  lang: DietLang
   generatedAt: number
   cwd: string
   model: string

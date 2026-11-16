@@ -57,7 +57,7 @@ Estado al 2026-11-14 · versión 1.1.0 · probado con Claude Code 2.1.325.
 
 ## Siguiente
 
-### v1.4 — validar con uso real
+### v1.5 — validar con uso real
 - [ ] Usarlo una semana y ajustar `MIN_DAYS`, `MIN_TURNS` y el umbral de memoria pesada con esos datos.
 - [ ] QA visual de la etiqueta, el panel y la banda en terminal y en la app de escritorio (hoy solo los cubren los tests del árbol).
 - [ ] En escritorio, probar la barra como `Svg` en vez de caracteres de bloque.
@@ -71,8 +71,8 @@ Estado al 2026-11-14 · versión 1.1.0 · probado con Claude Code 2.1.325.
 - [ ] Historial por proyecto: un server puede ser inútil aquí y esencial en otro repo.
 
 ### Publicación
-- [ ] Ícono (`claude plugin validate` lo pide para el directorio).
-- [ ] Textos en inglés, o idioma configurable con `userConfig`.
+- [x] Ícono (`claude plugin validate` lo pide para el directorio): `.claude-plugin/icon.png`, 1024×1024.
+- [x] Textos en inglés y castellano, con la opción `language` de `userConfig` (inglés por defecto).
 - [x] CI que corra `claude plugin validate` y `claude plugin test`.
 
 ## Principios
