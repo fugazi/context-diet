@@ -111,8 +111,9 @@ test('/diet imprime el resumen con el desglose real y no lee secretos', async ($
 
   // `projects[cwd]` de ~/.claude.json es el scope local; `.mcp.json`, project.
   const all = (await diet($, '--all')).text ?? ''
-  expect(all).toMatch(/brave-search \[local\] · 0 cargados/)
-  expect(all).toMatch(/FIJO\s+ccd_session \[host\]/)
+  expect(all).toContain('| `OBSERVAR` | brave-search | local | 0 |')
+  expect(all).toMatch(/\| ccd_session \| 1k \|/)
+  expect(all).toContain('**Tus servidores MCP**')
 })
 
 test('/diet --json es parseable y los argumentos desconocidos muestran la ayuda', async ($, on) => {
@@ -252,9 +253,15 @@ test('la fila de /diet se dibuja como etiqueta; una fila vieja queda como texto'
     await ui.unmount()
   }
 
+  // --all es markdown y lo dibuja la fila tal cual: no hay tablero encima.
   const all = await $.ui.mount({ ...ROW, props: { ...props, args: '--all' }, surface: 'terminal' })
-  expect(await all.find({ type: 'Text', text: /ccd_session/ })).toBeDefined()
+  expect(await all.find({ type: 'Text', text: /^Context Diet$/ })).toBe(undefined)
   await all.unmount()
+
+  // El texto puede llegar bajo el nombre del plugin; sigue siendo este reporte.
+  const named = await $.ui.mount({ ...ROW, props: { ...props, text: `context-diet: ${text}` }, surface: 'desktop' })
+  expect(await named.find({ type: 'Text', text: /^Context Diet$/ })).toBeDefined()
+  await named.unmount()
 
   // Otro texto (una fila anterior, la ayuda, el JSON) no es de este reporte.
   const old = await $.ui.mount({ ...ROW, props: { ...props, text: 'Context Diet · 2020-01-01 00:00:00 UTC' }, surface: 'terminal' })
@@ -292,7 +299,7 @@ test('el panel dibuja la etiqueta en cada superficie y se actualiza', async ($, 
     await ui.unmount()
   }
 
-  expect((await diet($, 'panel')).text).toBe('Context Diet: panel abierto.')
+  expect((await diet($, 'panel')).text).toBe('Context Diet: Panel visual abierto.')
 })
 
 test('en el panel cada cabecera pliega su recuadro; la ayuda va en tablas', async ($, on) => {

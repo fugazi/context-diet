@@ -212,7 +212,7 @@ export function label(
   const ownLoaded = summary.shown.reduce((sum, server) => sum + server.loadedTokens, 0)
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" gap={1}>
       <Box flexDirection="column" width={width + 4} paddingX={2}>
         <Text mono bold>
           Context Diet

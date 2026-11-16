@@ -26,7 +26,7 @@ El mod registra un comando, un panel y una línea de estado. No registra tools, 
 
 ## Presentación
 
-- **Texto** (`renderReport`): lo que devuelve `command.run`. Queda en el transcript y lo lee el modelo, así que el resumen es corto; `--all` lo expande.
+- **Texto** (`renderReport`): lo que devuelve `command.run`. Queda en el transcript y lo lee el modelo, así que el resumen es corto. `--all` (`renderDetail`) da el reporte entero como markdown, una tabla por tema, y la fila del transcript lo dibuja sin hook.
 - **Etiqueta** (`label`): un hook `ui.render` sobre `CommandOutput` dibuja la fila de `/diet` como un tablero: un recuadro redondeado de color por tema (fijo, queda, MCP, skills, acciones), todo en monoespaciado, con filas de puntos guía y una barra fijo / conversación / libre hecha de cajas de color. La fila de `/diet help` se dibuja como `Markdown`, con sus dos tablas. Se dibuja desde `$.state.printed`, el último reporte impreso; una fila cuyo texto no empieza con el sello de ese reporte queda como texto. Así una fila no cambia cuando el reporte se refresca al cierre de cada turno.
 - **Panel**: el mismo tablero en modo resumen, leído de `$.state.report`, más un botón de actualizar. Cada cabecera es un botón (teclas `1` a `5`) que pliega su recuadro; lo plegado vive en `$.state.folded` y ACCIONES empieza plegado.
 - **Banda** (`AbovePrompt`): apagada por defecto; tras `/diet status on`, una fila que solo se dibuja si hay candidatos o si quedan 10 turnos o menos para compactar, con una × que la apaga. Reemplaza a la línea de estado, que repetía el porcentaje que Claude ya muestra.

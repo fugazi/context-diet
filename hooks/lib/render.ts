@@ -136,15 +136,137 @@ export function noActionsText(report: DietReport): string {
     : 'sin candidatos: todo lo tuyo se usó alguna vez'
 }
 
+/** Una celda de tabla markdown: sin saltos de línea ni barras sueltas. */
+const cell = (value: string | number) => String(value).replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ')
+
+function table(head: string[], rows: (string | number)[][]): string[] {
+  return [
+    `| ${head.join(' | ')} |`,
+    `| ${head.map(() => '---').join(' | ')} |`,
+    ...rows.map(row => `| ${row.map(cell).join(' | ')} |`),
+  ]
+}
+
+const code = (text: string) => `\`${text}\``
+
+/**
+ * El reporte completo (`/diet --all`) como markdown: una tabla por tema, que
+ * la fila del transcript dibuja como dibuja cualquier respuesta.
+ */
+export function renderDetail(report: DietReport): string {
+  const summary = summarize(report)
+  const { forecast, totals } = report
+  const target = forecast.isAutoCompactEnabled ? 'compactar' : 'llenar el contexto'
+  const history = (evidence: DietEvidence) => evidenceText(evidence)
+  const lines: string[] = [`${reportStamp(report)}${report.model ? ` · ${report.model}` : ''} · detalle`, '']
+  const section = (title: string, note: string, body: string[]) => {
+    lines.push(`**${title}**${note ? ` · ${note}` : ''}`, '', ...body, '')
+  }
+
+  const percent = report.percent == null ? '' : ` (${report.percent}%)`
+  section('Contexto', `fijo ${summary.fixedPercent}% de lo usado`, table(['Concepto', 'Tokens'], [
+    ['Fijo por request', `~${formatTokens(totals.fixed)}`],
+    ['Conversación', formatTokens(forecast.conversation)],
+    ['En uso', `${formatTokens(report.tokens ?? forecast.used)} de ${formatTokens(report.window)}${percent}`],
+    [`Espacio libre hasta ${target}`, formatTokens(forecast.headroom)],
+    ['Gasto medio por turno', forecast.perTurn === null ? 'sin medir' : `~${formatTokens(forecast.perTurn)}`],
+    ['Turnos que te quedan', forecast.turnsLeft === null ? 'sin medir' : `~${forecast.turnsLeft}`],
+  ]))
+
+  section('De qué está hecho el fijo', '', table(['Parte', 'Tokens'], summary.composition.map(part => [part.label, formatTokens(part.tokens)])))
+
+  const own = [...summary.shown, ...summary.idle]
+  section(
+    'Tus servidores MCP',
+    `${own.length + summary.missing.length}`,
+    own.length + summary.missing.length === 0
+      ? ['Ninguno en tu config.']
+      : table(['Veredicto', 'Server', 'Origen', 'Cargados', 'Tools', 'Diferidos', 'Llamadas', 'Historial'], [
+          ...own.map(server => [
+            code(VERDICT_LABEL[server.verdict]),
+            server.label,
+            server.scope,
+            formatTokens(server.loadedTokens),
+            `${server.loadedTools}/${server.tools}`,
+            formatTokens(server.deferredTokens),
+            server.errors ? `${server.calls} (${server.errors} con error)` : server.calls,
+            history(server.evidence),
+          ]),
+          ...summary.missing.map(server => [code('SIN TOOLS'), server.label, server.scope, '?', '?', '?', 0, 'desconectado o aún conectando']),
+        ]),
+  )
+
+  const host = report.servers.filter(one => one.isConnected && one.scope === 'host')
+  if (host.length) {
+    section(
+      'App de Claude y plugins',
+      `${host.length} servers · ${formatTokens(summary.host.loadedTokens)} cargados · fijo, no se quita desde tu config`,
+      table(['Server', 'Cargados', 'Tools', 'Diferidos', 'Llamadas'], host.map(server => [
+        server.label,
+        formatTokens(server.loadedTokens),
+        `${server.loadedTools}/${server.tools}`,
+        formatTokens(server.deferredTokens),
+        server.calls,
+      ])),
+    )
+  }
+  lines.push(`Diferido: ${summary.deferred.servers} servers · ${formatTokens(summary.deferred.tokens)} tras ToolSearch · 0 por request`, '')
+
+  section('Skills', `${formatTokens(totals.skills)} en el listado`, table(['Veredicto', 'Grupo', 'Origen', 'Skills', 'Tokens', 'Cargas', 'Historial'], summary.skills.map(group => [
+    code(VERDICT_LABEL[group.verdict]),
+    group.label,
+    group.pluginName ? 'plugin' : group.source,
+    group.skills,
+    formatTokens(group.tokens),
+    group.loads,
+    history(group.evidence),
+  ])))
+
+  if (report.agents.length) {
+    section('Agentes', `${report.agents.length} · ${formatTokens(totals.agents)}`, table(['Agente', 'Origen', 'Tokens', 'Usos'], report.agents.map(agent => [
+      agent.agentType,
+      agent.source,
+      formatTokens(agent.tokens),
+      agent.calls,
+    ])))
+  }
+  if (report.memory.length) {
+    section('Memoria', `${report.memory.length} · ${formatTokens(totals.memory)}`, table(['Archivo', 'Tipo', 'Tokens', 'Estado'], report.memory.map(file => [
+      code(file.path),
+      file.type,
+      formatTokens(file.tokens),
+      file.isHeavy ? code('PESADO') : '',
+    ])))
+  }
+
+  const heavy = report.memory.filter(file => file.isHeavy)
+  section(
+    'Acciones',
+    summary.actions.length ? `ahorro potencial ${formatTokens(totals.potentialSaving)} por request` : '',
+    summary.actions.length + heavy.length === 0
+      ? [noActionsText(report)]
+      : table(['Ahorro', 'Qué hacer'], [
+          ...summary.actions.map(item => [`−${formatTokens(item.saving)}`, code(item.action ?? '')]),
+          ...heavy.map(file => [formatTokens(file.tokens), `recorta ${code(file.path)}: se envía entero en cada request`]),
+        ]),
+  )
+
+  lines.push(
+    `Historial: ${report.history.sessions} sesión(es) en ${report.history.days} día(s). \`CANDIDATO\` = sin uso en ${report.history.minSessions}+ sesiones. Tokens estimados como en /context.`,
+  )
+  return lines.join('\n')
+}
+
 /**
  * El reporte como texto. Es también lo que queda en el transcript, así que el
- * resumen es corto; `isDetailed` (`/diet --all`) lista cada server y skill.
+ * resumen es corto; `isDetailed` (`/diet --all`) lo da entero, en tablas.
  */
 export function renderReport(report: DietReport, options: { isDetailed?: boolean } = {}): string {
+  if (options.isDetailed) return renderDetail(report)
   const summary = summarize(report)
   const { forecast, totals } = report
   const lines: string[] = []
-  lines.push(`${reportStamp(report)}${report.model ? ` · ${report.model}` : ''}${options.isDetailed ? ' · detalle' : ''}`)
+  lines.push(`${reportStamp(report)}${report.model ? ` · ${report.model}` : ''}`)
   lines.push('')
 
   const percent = report.percent == null ? '' : ` (${report.percent}%)`
@@ -158,10 +280,8 @@ export function renderReport(report: DietReport, options: { isDetailed?: boolean
   const own = summary.shown.length + summary.idle.length
   lines.push(`TUS SERVIDORES MCP (${own})`)
   if (!own && !summary.missing.length) lines.push('  ninguno')
-  for (const server of options.isDetailed ? [...summary.shown, ...summary.idle] : summary.shown) {
-    lines.push(`  ${serverLine(server)}`)
-  }
-  if (!options.isDetailed && summary.idle.length) {
+  for (const server of summary.shown) lines.push(`  ${serverLine(server)}`)
+  if (summary.idle.length) {
     lines.push(`  sin costo ni uso: ${summary.idle.map(server => server.label).join(', ')} (diferidos, 0 por request)`)
   }
   for (const server of summary.missing) {
@@ -173,17 +293,12 @@ export function renderReport(report: DietReport, options: { isDetailed?: boolean
     lines.push(
       `APP DE CLAUDE Y PLUGINS · ${summary.host.servers} servers · ${formatTokens(summary.host.loadedTokens)} cargados · fijo, no se quita desde tu config`,
     )
-    if (options.isDetailed) {
-      for (const server of report.servers.filter(one => one.isConnected && one.scope === 'host')) {
-        lines.push(`  ${serverLine(server)}`)
-      }
-    }
   }
   lines.push(`DIFERIDO · ${summary.deferred.servers} servers · ${formatTokens(summary.deferred.tokens)} tras ToolSearch · 0 por request`)
   lines.push('')
 
   lines.push(`SKILLS · ${formatTokens(totals.skills)} en el listado`)
-  const skills = options.isDetailed ? summary.skills : summary.skills.slice(0, 5)
+  const skills = summary.skills.slice(0, 5)
   for (const group of skills) lines.push(`  ${skillLine(group)}`)
   if (summary.skills.length > skills.length) lines.push(`  … ${summary.skills.length - skills.length} más`)
   lines.push('')
@@ -192,16 +307,7 @@ export function renderReport(report: DietReport, options: { isDetailed?: boolean
   lines.push(
     `AGENTES ${report.agents.length} · ${formatTokens(totals.agents)}   MEMORIA ${report.memory.length} · ${formatTokens(totals.memory)}${heavy.length ? ` (${heavy.length} pesado${heavy.length === 1 ? '' : 's'})` : ''}`,
   )
-  if (options.isDetailed) {
-    for (const agent of report.agents) {
-      lines.push(`  ${agent.agentType} [${agent.source}] · ${formatTokens(agent.tokens)} · ${agent.calls} usos`)
-    }
-    for (const file of report.memory) {
-      lines.push(`  ${file.isHeavy ? 'PESADO ' : ''}${file.path} [${file.type}] · ${formatTokens(file.tokens)}`)
-    }
-  } else {
-    for (const file of heavy) lines.push(`  PESADO ${file.path} [${file.type}] · ${formatTokens(file.tokens)}`)
-  }
+  for (const file of heavy) lines.push(`  PESADO ${file.path} [${file.type}] · ${formatTokens(file.tokens)}`)
   lines.push('')
 
   lines.push('ACCIONES')
@@ -213,7 +319,7 @@ export function renderReport(report: DietReport, options: { isDetailed?: boolean
   if (heavy.length) lines.push(`  recorta ${heavy.length} archivo(s) de memoria pesado(s): se envían enteros en cada request`)
   lines.push('')
   lines.push(
-    `Historial: ${report.history.sessions} sesión(es) en ${report.history.days} día(s). CANDIDATO = sin uso en ${report.history.minSessions}+ sesiones. Tokens estimados como en /context.${options.isDetailed ? '' : ' Detalle: /diet --all.'}`,
+    `Historial: ${report.history.sessions} sesión(es) en ${report.history.days} día(s). CANDIDATO = sin uso en ${report.history.minSessions}+ sesiones. Tokens estimados como en /context. Detalle: /diet --all.`,
   )
   return lines.join('\n')
 }

@@ -259,7 +259,7 @@ export const register: Register = on => {
     const report = await refresh($)
     if (args === 'panel' || args === '--panel') {
       const { isPlaced } = await $.ui.open({ id: PANE, title: PANE_TITLE })
-      return { text: isPlaced ? 'Context Diet: panel abierto.' : renderReport(report) }
+      return { text: isPlaced ? 'Context Diet: Panel visual abierto.' : renderReport(report) }
     }
     if (args === '--json') return { text: JSON.stringify(report, null, 2) }
     if (args && args !== '--all') return { text: `Argumento desconocido: "${e.args.trim()}"\n\n${HELP}` }
@@ -276,12 +276,12 @@ export const register: Register = on => {
       const { Markdown } = $.ui.resolve(e)
       return <Markdown text={e.props.text} />
     }
+    // `/diet --all` ya es markdown: la fila lo dibuja en tablas por sí sola.
+    if (e.props.args.trim().toLowerCase() === '--all') return next(e)
     const report = await read($, printedAtom)
-    if (!report || e.props.isErrored || !e.props.text.startsWith(reportStamp(report))) return next(e)
-    return label($.ui.resolve(e), report, {
-      width: labelWidth(e.viewport?.columns),
-      isDetailed: e.props.args.trim().toLowerCase() === '--all',
-    })
+    // El texto puede llegar bajo el nombre del plugin: el sello se busca dentro.
+    if (!report || e.props.isErrored || !e.props.text.includes(reportStamp(report))) return next(e)
+    return label($.ui.resolve(e), report, { width: labelWidth(e.viewport?.columns) })
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -301,7 +301,7 @@ export const register: Register = on => {
       return <Text>{summarize(report).alert ?? `fijo ${report.totals.fixed} tokens por request`}</Text>
     }
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" gap={1} paddingBottom={1}>
         {label(kit, report, {
           width: labelWidth(e.props.bodyColumns),
           panel: {
