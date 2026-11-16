@@ -6,20 +6,40 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { DietCounter, DietHistory, DietReport, DietScope, DietUsage } from '../types'
 import { EMPTY_HISTORY, EMPTY_USAGE, buildReport, parseMcpTool, sanitizeHistory, skillGroupKey } from './lib/report'
-import { label, labelWidth } from './lib/label'
+import { SECTIONS, label, labelWidth } from './lib/label'
 import { renderReport, reportStamp, summarize } from './lib/render'
 
 const PANE = 'context-diet'
 const PANE_TITLE = 'Context Diet'
 const HISTORY_KEY = 'history-1'
 const BAND_KEY = 'band'
+/** La ayuda, como markdown: la fila de `/diet help` la dibuja en tablas. */
 const HELP = [
-  '/diet                 la etiqueta de la sesión',
-  '/diet --all           con cada server, skill, agente y archivo',
-  '/diet --json          el reporte como JSON',
-  '/diet panel           abre el panel en vivo',
-  '/diet banda on|off    avisos sobre el prompt cuando hay algo que hacer',
-  '/diet reset           borra el historial entre sesiones',
+  '**Comandos del mod**',
+  '',
+  '| Comando | Qué hace |',
+  '| --- | --- |',
+  '| `/diet` | Imprime el reporte completo: contexto, MCP, skills, agentes, memoria y acciones. |',
+  '| `/diet --all` | El reporte con el detalle de cada server, skill, agente y archivo de memoria. |',
+  '| `/diet --json` | El mismo reporte como JSON. |',
+  '| `/diet panel` | Abre un panel junto al chat que se actualiza solo; tiene un botón «Actualizar» (tecla `r`). |',
+  '| `/diet status on` | Muestra la línea de estado (viene apagada). |',
+  '| `/diet status off` | La oculta; la preferencia se recuerda entre sesiones. |',
+  '| `/diet reset` | Borra el historial entre sesiones; los veredictos vuelven a `OBSERVAR`. |',
+  '| `/diet help` | Lista estos comandos. |',
+  '',
+  'Todos se pueden lanzar mientras Claude está respondiendo, sin esperar a que termine el turno.',
+  '',
+  '**Cómo leer el reporte**',
+  '',
+  '| Veredicto | Significado |',
+  '| --- | --- |',
+  '| `USADO` | Se usó en esta sesión. |',
+  '| `OCASIONAL` | No se usó ahora, pero sí en otras sesiones. Nunca se propone quitarlo. |',
+  '| `CANDIDATO` | Sin uso en 3 o más sesiones. Trae el comando para quitarlo y el ahorro. |',
+  '| `OBSERVAR` | Sin uso, pero todavía con poca evidencia. |',
+  '| `FIJO` | Skills integradas o sincronizadas, que no puedes quitar. |',
+  '| `SIN TOOLS` | Server configurado que no aportó tools (desconectado o aún conectando). |',
 ].join('\n')
 
 // Cambia la etiqueta cuando cambie la forma: descarta lo que guardó una
@@ -27,7 +47,11 @@ const HELP = [
 const usageAtom = atom({ plugin: 'context-diet', key: 'usage' } as const, EMPTY_USAGE, { shape: 'usage-1' })
 const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-2' })
 const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-2' })
-const bandAtom = atom({ plugin: 'context-diet', key: 'band' } as const, true)
+const bandAtom = atom({ plugin: 'context-diet', key: 'band' } as const, false)
+// ACCIONES empieza plegado: lo abre quien quiera verlo.
+const foldedAtom = atom({ plugin: 'context-diet', key: 'folded' } as const, ['actions'] as string[], {
+  shape: 'folded-1',
+})
 
 type Engine = EngineInterface
 
@@ -123,6 +147,16 @@ async function refresh($: Engine): Promise<DietReport> {
   return built.report
 }
 
+/** Enciende o apaga la banda, en esta sesión y en las siguientes. */
+async function setBand($: Engine, isOn: boolean): Promise<void> {
+  await update($, bandAtom, () => isOn)
+  try {
+    await $.store.set(BAND_KEY, isOn)
+  } catch {
+    // Sin store vale para esta sesión.
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     try {
@@ -136,10 +170,11 @@ export const register: Register = on => {
       $.ui.log(`Context Diet: /diet no registrado: ${String(error)}`)
     }
     try {
-      const isOn = (await $.store.get(BAND_KEY)) !== false
+      // Solo por demanda: sin un `/diet banda on` guardado, no hay banda.
+      const isOn = (await $.store.get(BAND_KEY)) === true
       await update($, bandAtom, () => isOn)
     } catch {
-      // Sin preferencia guardada, la banda queda encendida.
+      // Sin preferencia guardada, la banda queda apagada.
     }
     return next(e)
   })
@@ -213,14 +248,18 @@ export const register: Register = on => {
     const [word, wanted] = args.split(/\s+/)
     if (word === 'banda' || word === 'status') {
       if (wanted !== 'on' && wanted !== 'off') return { text: 'Uso: /diet banda on|off' }
-      await $.store.set(BAND_KEY, wanted === 'on')
-      await update($, bandAtom, () => wanted === 'on')
-      return { text: `Context Diet: avisos sobre el prompt ${wanted === 'on' ? 'activados' : 'apagados'}.` }
+      await setBand($, wanted === 'on')
+      return {
+        text:
+          wanted === 'on'
+            ? 'Context Diet: avisos sobre el prompt activados. Se cierran con la × o con /diet banda off.'
+            : 'Context Diet: avisos sobre el prompt apagados.',
+      }
     }
     const report = await refresh($)
     if (args === 'panel' || args === '--panel') {
       const { isPlaced } = await $.ui.open({ id: PANE, title: PANE_TITLE })
-      return { text: isPlaced ? 'Context Diet: panel abierto.' : renderReport(report) }
+      return { text: isPlaced ? 'Context Diet: Panel visual abierto.' : renderReport(report) }
     }
     if (args === '--json') return { text: JSON.stringify(report, null, 2) }
     if (args && args !== '--all') return { text: `Argumento desconocido: "${e.args.trim()}"\n\n${HELP}` }
@@ -232,18 +271,23 @@ export const register: Register = on => {
   // La fila de `/diet` en el transcript, como etiqueta. Solo la del último
   // reporte impreso: una fila anterior, o de otra sesión, queda como texto.
   on('ui.render', { component: 'CommandOutput', props: { command: 'diet' } }, async ($, e, next) => {
+    // La ayuda (sola o tras un argumento desconocido) va como tablas.
+    if (!e.props.isErrored && e.props.text.endsWith(HELP)) {
+      const { Markdown } = $.ui.resolve(e)
+      return <Markdown text={e.props.text} />
+    }
+    // `/diet --all` ya es markdown: la fila lo dibuja en tablas por sí sola.
+    if (e.props.args.trim().toLowerCase() === '--all') return next(e)
     const report = await read($, printedAtom)
-    if (!report || e.props.isErrored || !e.props.text.startsWith(reportStamp(report))) return next(e)
-    return label($.ui.resolve(e), report, {
-      width: labelWidth(e.viewport?.columns),
-      isDetailed: e.props.args.trim().toLowerCase() === '--all',
-    })
+    // El texto puede llegar bajo el nombre del plugin: el sello se busca dentro.
+    if (!report || e.props.isErrored || !e.props.text.includes(reportStamp(report))) return next(e)
+    return label($.ui.resolve(e), report, { width: labelWidth(e.viewport?.columns) })
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const kit = $.ui.resolve(e)
     const { Box, Text, Button } = kit
-    const report = await read($, reportAtom)
+    const [report, folded] = await Promise.all([read($, reportAtom), read($, foldedAtom)])
     const reload = <Button key="refresh" label="Actualizar" hotkey="r" onPress={() => void refresh($)} />
     if (!report) {
       return (
@@ -257,25 +301,36 @@ export const register: Register = on => {
       return <Text>{summarize(report).alert ?? `fijo ${report.totals.fixed} tokens por request`}</Text>
     }
     return (
-      <Box flexDirection="column">
-        {label(kit, report, { width: labelWidth(e.props.bodyColumns) })}
+      <Box flexDirection="column" gap={1} paddingBottom={1}>
+        {label(kit, report, {
+          width: labelWidth(e.props.bodyColumns),
+          panel: {
+            folded: folded.filter(id => (SECTIONS as readonly string[]).includes(id)),
+            onFold: id =>
+              void update($, foldedAtom, now => (now.includes(id) ? now.filter(one => one !== id) : [...now, id])),
+          },
+        })}
         {reload}
       </Box>
     )
   })
 
-  // La banda sobre el prompt: callada salvo que haya algo que hacer.
+  // La banda sobre el prompt: solo si se pidió con `/diet banda on` y hay algo
+  // que hacer. La × la apaga hasta que se vuelva a pedir.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const [report, isOn] = await Promise.all([read($, reportAtom), read($, bandAtom)])
     const alert = report && isOn ? summarize(report).alert : null
     if (!alert || e.props.hasSurvey) return next(e)
-    const { Text } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     return (
-      <Text wrap="truncate-end">
-        <Text color="warning">● diet </Text>
-        {alert}
-        <Text dimColor> · /diet</Text>
-      </Text>
+      <Box flexDirection="row" justifyContent="space-between" gap={1}>
+        <Text wrap="truncate-end">
+          <Text color="warning">● diet </Text>
+          {alert}
+          <Text dimColor> · /diet</Text>
+        </Text>
+        <Button key="hide" label="×" plain dimColor role="dismiss" onPress={() => void setBand($, false)} />
+      </Box>
     )
   })
 }

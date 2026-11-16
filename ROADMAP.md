@@ -42,9 +42,16 @@ Estado al 2026-11-14 · versión 1.1.0 · probado con Claude Code 2.1.325.
 - [x] La línea de estado se reemplaza por una banda sobre el prompt que solo aparece cuando hay algo que hacer; `/diet banda on|off`.
 - [x] Tests en `tests/`, la carpeta que el motor incluye en su `tsconfig`.
 
+### v1.2 — rediseño del panel
+- [x] Tablero en monoespaciado: un recuadro de color por tema, filas con puntos guía, una sola barra fijo / conversación / libre y leyenda de colores.
+- [x] Panel más corto: resumen por defecto, lo de la app en una línea, cabeceras que pliegan su recuadro (ACCIONES empieza plegado).
+- [x] «Cuánto te queda» con espacio libre, gasto por turno y turnos restantes.
+- [x] La banda sobre el prompt pasa a ser por demanda (`/diet status on`) y trae una × para cerrarla.
+- [x] `/diet help` en tablas: comandos y cómo leer los veredictos.
+
 ## Siguiente
 
-### v1.2 — validar con uso real
+### v1.3 — validar con uso real
 - [ ] Usarlo una semana: los veredictos necesitan 3+ sesiones reales. Ajustar `MIN_SESSIONS` y el umbral de memoria pesada con esos datos.
 - [ ] QA visual de la etiqueta, el panel y la banda en terminal y en la app de escritorio (hoy solo los cubren los tests del árbol).
 - [ ] En escritorio, probar la barra como `Svg` en vez de caracteres de bloque.

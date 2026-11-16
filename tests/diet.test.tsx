@@ -111,8 +111,9 @@ test('/diet imprime el resumen con el desglose real y no lee secretos', async ($
 
   // `projects[cwd]` de ~/.claude.json es el scope local; `.mcp.json`, project.
   const all = (await diet($, '--all')).text ?? ''
-  expect(all).toMatch(/brave-search \[local\] · 0 cargados/)
-  expect(all).toMatch(/FIJO\s+ccd_session \[host\]/)
+  expect(all).toContain('| `OBSERVAR` | brave-search | local | 0 |')
+  expect(all).toMatch(/\| ccd_session \| 1k \|/)
+  expect(all).toContain('**Tus servidores MCP**')
 })
 
 test('/diet --json es parseable y los argumentos desconocidos muestran la ayuda', async ($, on) => {
@@ -192,7 +193,7 @@ test('/diet reset borra el historial', async ($, on) => {
   expect((await diet($, '')).text).toMatch(/OBSERVAR\s+firecrawl/)
 })
 
-test('la banda calla sin nada que hacer, avisa con candidatos y se puede apagar', async ($, on) => {
+test('la banda solo aparece por demanda, avisa con candidatos y se cierra con la ×', async ($, on) => {
   const seen = world(on)
   await start($)
   await diet($, '')
@@ -203,6 +204,13 @@ test('la banda calla sin nada que hacer, avisa con candidatos y se puede apagar'
 
   seen.store.set(HISTORY_KEY, { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } })
   await diet($, '')
+  // Con candidatos sigue callada: nadie la pidió.
+  const unasked = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await unasked.find({ text: /candidatos/ })).toBe(undefined)
+  await unasked.unmount()
+
+  expect((await diet($, 'banda on')).text).toMatch(/activados/)
+  expect(seen.store.get('band')).toBe(true)
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
     const band = await $.ui.mount({ ...BAND, surface })
     expect((await band.find({ type: 'Text', text: /candidatos/ }))?.text).toBe(
@@ -216,7 +224,14 @@ test('la banda calla sin nada que hacer, avisa con candidatos y se puede apagar'
   const off = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await off.find({ text: /candidatos/ })).toBe(undefined)
   await off.unmount()
-  expect((await diet($, 'banda on')).text).toMatch(/activados/)
+
+  // La × la apaga y lo recuerda para las siguientes sesiones.
+  await diet($, 'banda on')
+  const shown = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await shown.press({ key: 'hide' })
+  expect(await shown.find({ text: /candidatos/ })).toBe(undefined)
+  expect(seen.store.get('band')).toBe(false)
+  await shown.unmount()
 })
 
 test('la fila de /diet se dibuja como etiqueta; una fila vieja queda como texto', async ($, on) => {
@@ -238,9 +253,15 @@ test('la fila de /diet se dibuja como etiqueta; una fila vieja queda como texto'
     await ui.unmount()
   }
 
+  // --all es markdown y lo dibuja la fila tal cual: no hay tablero encima.
   const all = await $.ui.mount({ ...ROW, props: { ...props, args: '--all' }, surface: 'terminal' })
-  expect(await all.find({ type: 'Text', text: /ccd_session/ })).toBeDefined()
+  expect(await all.find({ type: 'Text', text: /^Context Diet$/ })).toBe(undefined)
   await all.unmount()
+
+  // El texto puede llegar bajo el nombre del plugin; sigue siendo este reporte.
+  const named = await $.ui.mount({ ...ROW, props: { ...props, text: `context-diet: ${text}` }, surface: 'desktop' })
+  expect(await named.find({ type: 'Text', text: /^Context Diet$/ })).toBeDefined()
+  await named.unmount()
 
   // Otro texto (una fila anterior, la ayuda, el JSON) no es de este reporte.
   const old = await $.ui.mount({ ...ROW, props: { ...props, text: 'Context Diet · 2020-01-01 00:00:00 UTC' }, surface: 'terminal' })
@@ -272,9 +293,50 @@ test('el panel dibuja la etiqueta en cada superficie y se actualiza', async ($, 
     // El panel es el resumen: lo de la app va agregado en una fila.
     expect(await ui.find({ type: 'Text', text: /ccd_session/ })).toBe(undefined)
     expect(await ui.find({ type: 'Text', text: /App de Claude y plugins \(1\)/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /claude mcp remove -s user firecrawl/ })).toBeDefined()
+    // ACCIONES va plegado, con el ahorro en su cabecera.
+    expect(await ui.find({ type: 'Text', text: /−10\.7k por request/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /claude mcp remove -s user firecrawl/ })).toBe(undefined)
     await ui.unmount()
   }
 
-  expect((await diet($, 'panel')).text).toBe('Context Diet: panel abierto.')
+  expect((await diet($, 'panel')).text).toBe('Context Diet: Panel visual abierto.')
+})
+
+test('en el panel cada cabecera pliega su recuadro; la ayuda va en tablas', async ($, on) => {
+  world(on)
+  await start($)
+  await diet($, '')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /agent-skills/ })).toBeDefined()
+  // ACCIONES empieza plegado; un clic lo abre.
+  expect(await ui.find({ type: 'Text', text: /▸ ACCIONES/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /recorta .*CLAUDE\.md/ })).toBe(undefined)
+  await ui.press({ key: 'fold-actions' })
+  expect(await ui.find({ type: 'Text', text: /recorta .*CLAUDE\.md/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Desarrollado por Douglas Fugazi · https:\/\/douglasfugazi\.co/ })).toBeDefined()
+
+  // Plegado conserva la cabecera con su total y suelta las filas.
+  await ui.press({ key: 'fold-skills' })
+  expect(await ui.find({ type: 'Text', text: /agent-skills/ })).toBe(undefined)
+  expect(await ui.find({ type: 'Text', text: /▸ SKILLS/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /firecrawl/ })).toBeDefined()
+  await ui.press({ key: 'fold-skills' })
+  expect(await ui.find({ type: 'Text', text: /agent-skills/ })).toBeDefined()
+  expect(await ui.find({ text: /avisos/ })).toBe(undefined)
+  await ui.unmount()
+
+  // La ayuda se dibuja como markdown, con sus dos tablas.
+  const help = (await diet($, 'help')).text ?? ''
+  expect(help).toContain('| `/diet --all` |')
+  expect(help).toContain('| `/diet status on` | Muestra la línea de estado (viene apagada). |')
+  const row = await $.ui.mount({
+    plugin: 'context-diet',
+    component: 'CommandOutput',
+    requestId: 'h1',
+    props: { command: 'diet', args: 'help', text: help, isErrored: false },
+    surface: 'desktop',
+  })
+  expect(await row.find({ type: 'Markdown' })).toBeDefined()
+  await row.unmount()
 })

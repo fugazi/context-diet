@@ -1,12 +1,40 @@
-// El reporte dibujado como una hoja de tarifas: la cifra que se paga en cada
-// request en un recuadro doble, y debajo de qué está hecha y qué se puede
-// quitar, en filas con puntos guía. Un mismo árbol para cada superficie.
+// El reporte dibujado como un tablero: un recuadro de color por tema (lo fijo,
+// lo que queda, MCP, skills, acciones), con filas de puntos guía. En el panel
+// cada cabecera pliega su recuadro. Un mismo árbol para cada superficie.
 import type { DietReport, DietVerdict } from '../../types'
 import { VERDICT_LABEL, formatTokens, noActionsText, summarize } from './render'
 
 /** La tabla de elementos de la superficie, de `$.ui.resolve(e)`. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Kit = { Box: any; Text: any }
+type Kit = { Box: any; Text: any; Button?: any }
+
+/** Los recuadros, en el orden en que se dibujan; su tecla es su posición. */
+export const SECTIONS = ['fixed', 'left', 'mcp', 'skills', 'actions'] as const
+export type DietSection = (typeof SECTIONS)[number]
+
+/** Un color por recuadro: borde, título y su marca en la leyenda. */
+const SECTION_COLOR: Record<DietSection, string> = {
+  fixed: 'warning',
+  left: 'success',
+  mcp: 'suggestion',
+  skills: 'merged',
+  actions: 'claude',
+}
+
+const SECTION_LEGEND: Record<DietSection, string> = {
+  fixed: 'fijo',
+  left: 'queda',
+  mcp: 'mcp',
+  skills: 'skills',
+  actions: 'acciones',
+}
+
+/** Lo que el panel añade a la etiqueta: lo que se puede pulsar. */
+export type DietPanel = {
+  /** Los recuadros plegados. */
+  folded: readonly string[]
+  onFold: (section: DietSection) => void
+}
 
 const VERDICT_COLOR: Record<DietVerdict, string> = {
   used: 'success',
@@ -71,8 +99,13 @@ type RowOptions = {
   isStrong?: boolean
 }
 
-export function label(kit: Kit, report: DietReport, options: { width: number; isDetailed?: boolean }) {
-  const { Box, Text } = kit
+export function label(
+  kit: Kit,
+  report: DietReport,
+  options: { width: number; isDetailed?: boolean; panel?: DietPanel },
+) {
+  const { Box, Text, Button } = kit
+  const panel = Button ? options.panel : undefined
   const width = options.width
   const summary = summarize(report)
   const { forecast, totals } = report
@@ -119,17 +152,50 @@ export function label(kit: Kit, report: DietReport, options: { width: number; is
     )
   }
 
-  /** El título de un recuadro, con su total a la derecha. */
-  const head = (title: string, meta = '') => (
-    <Box flexDirection="row" justifyContent="space-between" width={width}>
-      <Text mono bold>
+  /** Un estado: verde encendido, apagado en gris. */
+  const state = (name: string, isOn: boolean) => (
+    <Text mono>
+      <Text mono dimColor>
+        {name}{' '}
+      </Text>
+      <Text mono bold={isOn} dimColor={!isOn} color={isOn ? 'success' : undefined}>
+        {isOn ? '● on' : '○ off'}
+      </Text>
+    </Text>
+  )
+
+  /**
+   * Un recuadro de su color: título, total a la derecha y el cuerpo. En el
+   * panel el título es un botón que lo pliega; plegado conserva su total.
+   */
+  const card = (id: DietSection, title: string, meta: string, body: () => unknown[]) => {
+    const color = SECTION_COLOR[id]
+    const isFolded = panel?.folded.includes(id) ?? false
+    const name = (
+      <Text mono bold color={color}>
+        {panel ? (isFolded ? '▸ ' : '▾ ') : ''}
         {title}
       </Text>
-      <Text mono dimColor>
-        {meta}
-      </Text>
-    </Box>
-  )
+    )
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor={color} borderDimColor={isFolded} paddingX={1} width={width + 4}>
+        <Box flexDirection="row" justifyContent="space-between" width={width}>
+          {panel ? (
+            <Button key={`fold-${id}`} plain hotkey={String(SECTIONS.indexOf(id) + 1)} onPress={() => panel.onFold(id)}>
+              {name}
+            </Button>
+          ) : (
+            name
+          )}
+          <Text mono dimColor>
+            {meta}
+          </Text>
+        </Box>
+        {!isFolded && dashes()}
+        {!isFolded && body().filter(Boolean)}
+      </Box>
+    )
+  }
 
   const parts = options.isDetailed ? summary.composition : summary.composition.slice(0, SUMMARY_PARTS)
   const otherParts = summary.composition.slice(parts.length)
@@ -140,31 +206,42 @@ export function label(kit: Kit, report: DietReport, options: { width: number; is
   const heavy = report.memory.filter(file => file.isHeavy)
   const hasOwn = servers.length > 0 || summary.missing.length > 0
   const turnsColor = forecast.turnsLeft !== null && forecast.turnsLeft <= 10 ? 'warning' : 'success'
+  const leftMeta = forecast.turnsLeft !== null ? `~${forecast.turnsLeft} turnos` : `${formatTokens(forecast.headroom)} libres`
+  const hasActions = summary.actions.length > 0 || heavy.length > 0
+  const actionsMeta = totals.potentialSaving > 0 ? `−${formatTokens(totals.potentialSaving)} por request` : hasActions ? 'pendientes' : 'nada pendiente'
   const ownLoaded = summary.shown.reduce((sum, server) => sum + server.loadedTokens, 0)
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" gap={1}>
       <Box flexDirection="column" width={width + 4} paddingX={2}>
         <Text mono bold>
           Context Diet
         </Text>
         {row('MODELO EN USO', report.model || 'sin dato', { isDim: true })}
+        <Text mono wrap="truncate-end">
+          {SECTIONS.map((id, index) => (
+            <Text mono color={SECTION_COLOR[id]}>
+              {index ? '  ' : ''}■ {SECTION_LEGEND[id]}
+            </Text>
+          ))}
+        </Text>
+        {state('autocompactar', forecast.isAutoCompactEnabled)}
       </Box>
 
-      <Box flexDirection="column" borderStyle="double" paddingX={1} width={width + 4}>
+      {card('fixed', 'FIJO · por request', `~${formatTokens(totals.fixed)}`, () => [
         <Text mono dimColor wrap="wrap">
           Lo que Claude carga antes de leer tu mensaje: tools, skills e instrucciones. Se vuelve a enviar en cada
           request.
-        </Text>
-        {dashes()}
-        {row('Fijo por request', `~${formatTokens(totals.fixed)}`, { color: FIXED_COLOR, isStrong: true })}
-        {row('Conversación', formatTokens(forecast.conversation), { color: CONVERSATION_COLOR, isStrong: true })}
-        {row('Límite de contexto del modelo', formatTokens(report.window))}
+        </Text>,
+        dashes(),
+        row('Fijo por request', `~${formatTokens(totals.fixed)}`, { color: FIXED_COLOR, isStrong: true }),
+        row('Conversación', formatTokens(forecast.conversation), { color: CONVERSATION_COLOR, isStrong: true }),
+        row('Límite de contexto del modelo', formatTokens(report.window)),
         <Box flexDirection="row" width={width} height={1}>
           {fixedCells > 0 && <Box width={fixedCells} height={1} backgroundColor={FIXED_COLOR} />}
           {conversationCells > 0 && <Box width={conversationCells} height={1} backgroundColor={CONVERSATION_COLOR} />}
           {freeCells > 0 && <Box width={freeCells} height={1} backgroundColor="subtle" />}
-        </Box>
+        </Box>,
         <Box flexDirection="row" justifyContent="space-between" width={width}>
           <Text mono color={FIXED_COLOR}>
             ■ {percent(summary.share.fixed)} fijo
@@ -175,120 +252,113 @@ export function label(kit: Kit, report: DietReport, options: { width: number; is
           <Text mono dimColor>
             ■ {percent(summary.share.free)} libre
           </Text>
-        </Box>
-        {dashes()}
+        </Box>,
+        dashes(),
         <Text mono bold>
           De qué está hecho el fijo
-        </Text>
-        {parts.map(part => row(part.label, formatTokens(part.tokens)))}
-        {otherParts.length > 0 &&
+        </Text>,
+        ...parts.map(part => row(part.label, formatTokens(part.tokens))),
+        otherParts.length > 0 &&
           row(`Otros (${otherParts.length})`, formatTokens(otherParts.reduce((sum, part) => sum + part.tokens, 0)), {
             isDim: true,
-          })}
-      </Box>
+          }),
+      ])}
 
-      <Box flexDirection="column" borderStyle="single" borderDimColor paddingX={1} width={width + 4}>
-        {head('Cuánto te queda', forecast.isAutoCompactEnabled ? 'hasta compactar' : 'hasta llenar el contexto')}
-        {dashes()}
-        {row('Espacio libre', formatTokens(forecast.headroom))}
-        {forecast.perTurn !== null && row('Gasto medio por turno', `~${formatTokens(forecast.perTurn)}`)}
-        {forecast.turnsLeft !== null
+      {card('left', `QUEDA · ${forecast.isAutoCompactEnabled ? 'hasta compactar' : 'hasta llenar el contexto'}`, leftMeta, () => [
+        row('Espacio libre', formatTokens(forecast.headroom)),
+        forecast.perTurn !== null && row('Gasto medio por turno', `~${formatTokens(forecast.perTurn)}`),
+        forecast.turnsLeft !== null
           ? row('Turnos que te quedan', `~${forecast.turnsLeft}`, { color: turnsColor, isStrong: true })
-          : row('Turnos que te quedan', 'sin medir', { isDim: true })}
+          : row('Turnos que te quedan', 'sin medir', { isDim: true }),
         <Text mono dimColor wrap="wrap">
-          {forecast.turnsLeft === null
-            ? 'El ritmo se mide tras un par de turnos. '
-            : ''}
+          {forecast.turnsLeft === null ? 'El ritmo se mide tras un par de turnos. ' : ''}
           {forecast.isAutoCompactEnabled
             ? 'Al agotarse, Claude resume la conversación para seguir y se pierde detalle.'
             : 'Al agotarse, la conversación no puede continuar.'}
-        </Text>
-      </Box>
+        </Text>,
+      ])}
 
-      <Box flexDirection="column" borderStyle="single" borderDimColor paddingX={1} width={width + 4}>
-        {head('Tus servidores MCP', `${formatTokens(ownLoaded)} cargados`)}
-        {dashes()}
-        {!hasOwn && summary.idle.length === 0 && (
+      {card('mcp', 'MCP · tus servidores', `${formatTokens(ownLoaded)} cargados`, () => [
+        !hasOwn && summary.idle.length === 0 && (
           <Text mono dimColor>
             Ninguno en tu config.
           </Text>
-        )}
-        {servers.map(server =>
+        ),
+        ...servers.map(server =>
           row(server.calls > 0 ? `${server.label} ${server.calls}×` : server.label, formatTokens(server.loadedTokens), {
             mark: '●',
             color: VERDICT_COLOR[server.verdict],
             tag: VERDICT_LABEL[server.verdict],
           }),
-        )}
-        {summary.missing.map(server => row(server.label, '?', { mark: '○', color: 'error', tag: 'SIN TOOLS' }))}
-        {!options.isDetailed && summary.idle.length > 0 && (
+        ),
+        ...summary.missing.map(server => row(server.label, '?', { mark: '○', color: 'error', tag: 'SIN TOOLS' })),
+        !options.isDetailed && summary.idle.length > 0 && (
           <Text mono dimColor wrap="wrap">
             Sin costo ni uso: {summary.idle.map(server => server.label).join(', ')}
           </Text>
-        )}
-        {hasOwn && dashes()}
-        {summary.host.servers > 0 &&
+        ),
+        hasOwn && dashes(),
+        summary.host.servers > 0 &&
           row(`App de Claude y plugins (${summary.host.servers})`, formatTokens(summary.host.loadedTokens), {
             isDim: true,
             color: VERDICT_COLOR.info,
             tag: VERDICT_LABEL.info,
-          })}
-        {hostServers.map(server =>
+          }),
+        ...hostServers.map(server =>
           row(`  ${server.label}`, formatTokens(server.loadedTokens), { isDim: true, tag: `${server.calls}×` }),
-        )}
-        {row(`Diferidos (${summary.deferred.servers}), 0 por request`, formatTokens(summary.deferred.tokens), {
+        ),
+        row(`Diferidos (${summary.deferred.servers}), 0 por request`, formatTokens(summary.deferred.tokens), {
           isDim: true,
           tag: '',
-        })}
-      </Box>
+        }),
+      ])}
 
-      <Box flexDirection="column" borderStyle="single" borderDimColor paddingX={1} width={width + 4}>
-        {head('Skills', `${formatTokens(totals.skills)} en el listado`)}
-        {dashes()}
-        {skillRows.map(group =>
+      {card('skills', 'SKILLS · en el listado', formatTokens(totals.skills), () => [
+        ...skillRows.map(group =>
           row(group.skills > 1 ? `${group.label} (${group.skills})` : group.label, formatTokens(group.tokens), {
             mark: '●',
             color: VERDICT_COLOR[group.verdict],
             tag: VERDICT_LABEL[group.verdict],
           }),
-        )}
-        {otherSkills.length > 0 &&
+        ),
+        otherSkills.length > 0 &&
           row(`  +${otherSkills.length} más`, formatTokens(otherSkills.reduce((sum, group) => sum + group.tokens, 0)), {
             isDim: true,
             tag: '',
-          })}
-      </Box>
+          }),
+      ])}
 
-      <Box flexDirection="column" borderStyle="single" borderDimColor paddingX={1} width={width + 4}>
-        {head('Qué hacer', totals.potentialSaving > 0 ? `−${formatTokens(totals.potentialSaving)} por request` : '')}
-        {dashes()}
-        {summary.actions.length === 0 && heavy.length === 0 && (
+      {card('actions', 'ACCIONES · qué hacer', actionsMeta, () => [
+        !hasActions && (
           <Text mono dimColor wrap="wrap">
             {noActionsText(report)}
           </Text>
-        )}
-        {summary.actions.map(item => (
+        ),
+        ...summary.actions.map(item => (
           <Text mono wrap="wrap">
             <Text mono bold color="warning">
               −{formatTokens(item.saving)}{' '}
             </Text>
             {item.action}
           </Text>
-        ))}
-        {heavy.map(file => (
+        )),
+        ...heavy.map(file => (
           <Text mono wrap="wrap">
             <Text mono bold color="warning">
               {formatTokens(file.tokens)}{' '}
             </Text>
             recorta {file.path}
           </Text>
-        ))}
-      </Box>
+        )),
+      ])}
 
-      <Box paddingX={2} width={width + 4}>
-        <Text mono dimColor size="caption" wrap="wrap">
-          Estimado como en /context. Historial: {report.history.sessions} sesión(es). Nada se apaga solo.
-          {options.isDetailed ? '' : ' Detalle: /diet --all.'}
+      <Box flexDirection="column" paddingX={2} width={width + 4}>
+        <Text mono dimColor wrap="wrap">
+          Historial: {report.history.sessions} {report.history.sessions === 1 ? 'sesión' : 'sesiones'} · Para conocer
+          más comandos: /diet help
+        </Text>
+        <Text mono dimColor wrap="wrap">
+          Desarrollado por Douglas Fugazi · https://douglasfugazi.co
         </Text>
       </Box>
     </Box>
