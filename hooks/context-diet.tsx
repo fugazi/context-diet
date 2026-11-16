@@ -18,7 +18,7 @@ const HELP = [
   '/diet --all           con cada server, skill, agente y archivo',
   '/diet --json          el reporte como JSON',
   '/diet panel           abre el panel en vivo',
-  '/diet banda on|off    avisos sobre el prompt cuando hay algo que hacer',
+  '/diet banda on|off    avisos sobre el prompt (apagados por defecto)',
   '/diet reset           borra el historial entre sesiones',
 ].join('\n')
 
@@ -27,7 +27,7 @@ const HELP = [
 const usageAtom = atom({ plugin: 'context-diet', key: 'usage' } as const, EMPTY_USAGE, { shape: 'usage-1' })
 const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-2' })
 const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-2' })
-const bandAtom = atom({ plugin: 'context-diet', key: 'band' } as const, true)
+const bandAtom = atom({ plugin: 'context-diet', key: 'band' } as const, false)
 
 type Engine = EngineInterface
 
@@ -123,6 +123,16 @@ async function refresh($: Engine): Promise<DietReport> {
   return built.report
 }
 
+/** Enciende o apaga la banda, en esta sesión y en las siguientes. */
+async function setBand($: Engine, isOn: boolean): Promise<void> {
+  await update($, bandAtom, () => isOn)
+  try {
+    await $.store.set(BAND_KEY, isOn)
+  } catch {
+    // Sin store vale para esta sesión.
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     try {
@@ -136,10 +146,11 @@ export const register: Register = on => {
       $.ui.log(`Context Diet: /diet no registrado: ${String(error)}`)
     }
     try {
-      const isOn = (await $.store.get(BAND_KEY)) !== false
+      // Solo por demanda: sin un `/diet banda on` guardado, no hay banda.
+      const isOn = (await $.store.get(BAND_KEY)) === true
       await update($, bandAtom, () => isOn)
     } catch {
-      // Sin preferencia guardada, la banda queda encendida.
+      // Sin preferencia guardada, la banda queda apagada.
     }
     return next(e)
   })
@@ -213,9 +224,13 @@ export const register: Register = on => {
     const [word, wanted] = args.split(/\s+/)
     if (word === 'banda' || word === 'status') {
       if (wanted !== 'on' && wanted !== 'off') return { text: 'Uso: /diet banda on|off' }
-      await $.store.set(BAND_KEY, wanted === 'on')
-      await update($, bandAtom, () => wanted === 'on')
-      return { text: `Context Diet: avisos sobre el prompt ${wanted === 'on' ? 'activados' : 'apagados'}.` }
+      await setBand($, wanted === 'on')
+      return {
+        text:
+          wanted === 'on'
+            ? 'Context Diet: avisos sobre el prompt activados. Se cierran con la × o con /diet banda off.'
+            : 'Context Diet: avisos sobre el prompt apagados.',
+      }
     }
     const report = await refresh($)
     if (args === 'panel' || args === '--panel') {
@@ -264,18 +279,22 @@ export const register: Register = on => {
     )
   })
 
-  // La banda sobre el prompt: callada salvo que haya algo que hacer.
+  // La banda sobre el prompt: solo si se pidió con `/diet banda on` y hay algo
+  // que hacer. La × la apaga hasta que se vuelva a pedir.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const [report, isOn] = await Promise.all([read($, reportAtom), read($, bandAtom)])
     const alert = report && isOn ? summarize(report).alert : null
     if (!alert || e.props.hasSurvey) return next(e)
-    const { Text } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     return (
-      <Text wrap="truncate-end">
-        <Text color="warning">● diet </Text>
-        {alert}
-        <Text dimColor> · /diet</Text>
-      </Text>
+      <Box flexDirection="row" justifyContent="space-between" gap={1}>
+        <Text wrap="truncate-end">
+          <Text color="warning">● diet </Text>
+          {alert}
+          <Text dimColor> · /diet</Text>
+        </Text>
+        <Button key="hide" label="×" plain dimColor role="dismiss" onPress={() => void setBand($, false)} />
+      </Box>
     )
   })
 }

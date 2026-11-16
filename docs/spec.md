@@ -19,7 +19,7 @@ El mod registra un comando, un panel y una línea de estado. No registra tools, 
 /diet --all           con cada server, skill, agente y archivo
 /diet --json          el reporte como JSON (tipo DietReport)
 /diet panel           panel en vivo
-/diet banda on|off    avisos sobre el prompt
+/diet banda on|off    avisos sobre el prompt (apagados por defecto)
 /diet reset           borra el historial
 ```
 
@@ -28,7 +28,7 @@ El mod registra un comando, un panel y una línea de estado. No registra tools, 
 - **Texto** (`renderReport`): lo que devuelve `command.run`. Queda en el transcript y lo lee el modelo, así que el resumen es corto; `--all` lo expande.
 - **Etiqueta** (`label`): un hook `ui.render` sobre `CommandOutput` dibuja la fila de `/diet` como etiqueta nutricional. Se dibuja desde `$.state.printed`, el último reporte impreso; una fila cuyo texto no empieza con el sello de ese reporte queda como texto. Así una fila no cambia cuando el reporte se refresca al cierre de cada turno.
 - **Panel**: la misma etiqueta con detalle, leída de `$.state.report`, más un botón de actualizar.
-- **Banda** (`AbovePrompt`): una fila que solo se dibuja si hay candidatos o si quedan 10 turnos o menos para compactar. Reemplaza a la línea de estado, que repetía el porcentaje que Claude ya muestra.
+- **Banda** (`AbovePrompt`): apagada por defecto; tras `/diet banda on`, una fila que solo se dibuja si hay candidatos o si quedan 10 turnos o menos para compactar, con una × que la apaga. Reemplaza a la línea de estado, que repetía el porcentaje que Claude ya muestra.
 
 Los colores son claves del tema (`success`, `warning`, `suggestion`, `subtle`, `inactive`), así que siguen al tema de la persona. Las barras son caracteres de bloque: un mismo árbol sirve para terminal, escritorio, VS Code y móvil.
 
@@ -64,7 +64,7 @@ Estado:
 - `$.state` `report`: último reporte. El panel lo lee al dibujar, así que cada escritura lo redibuja.
 - `$.store` `history-1`: un registro por sesión con todo lo presente y sus usos.
 - `$.state` `printed`: el reporte que `/diet` imprimió por última vez.
-- `$.state` `band` y `$.store` `band`: `false` si la persona apagó la banda.
+- `$.state` `band` y `$.store` `band`: `true` solo si la persona encendió la banda con `/diet banda on`; la × y `banda off` la devuelven a `false`.
 
 ## Veredictos
 

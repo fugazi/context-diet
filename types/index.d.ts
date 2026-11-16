@@ -177,7 +177,7 @@ declare module 'claude-code' {
       report: Shaped<DietReport | null>
       /** El último reporte que `/diet` imprimió: su fila se dibuja de aquí. */
       printed: Shaped<DietReport | null>
-      /** Si la banda sobre el prompt puede mostrarse. */
+      /** Si la persona pidió la banda sobre el prompt; apagada por defecto. */
       band: boolean
     }
   }

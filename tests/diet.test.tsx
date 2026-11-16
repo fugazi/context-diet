@@ -192,7 +192,7 @@ test('/diet reset borra el historial', async ($, on) => {
   expect((await diet($, '')).text).toMatch(/OBSERVAR\s+firecrawl/)
 })
 
-test('la banda calla sin nada que hacer, avisa con candidatos y se puede apagar', async ($, on) => {
+test('la banda solo aparece por demanda, avisa con candidatos y se cierra con la ×', async ($, on) => {
   const seen = world(on)
   await start($)
   await diet($, '')
@@ -203,6 +203,13 @@ test('la banda calla sin nada que hacer, avisa con candidatos y se puede apagar'
 
   seen.store.set(HISTORY_KEY, { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } })
   await diet($, '')
+  // Con candidatos sigue callada: nadie la pidió.
+  const unasked = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await unasked.find({ text: /candidatos/ })).toBe(undefined)
+  await unasked.unmount()
+
+  expect((await diet($, 'banda on')).text).toMatch(/activados/)
+  expect(seen.store.get('band')).toBe(true)
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
     const band = await $.ui.mount({ ...BAND, surface })
     expect((await band.find({ type: 'Text', text: /candidatos/ }))?.text).toBe(
@@ -216,7 +223,14 @@ test('la banda calla sin nada que hacer, avisa con candidatos y se puede apagar'
   const off = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await off.find({ text: /candidatos/ })).toBe(undefined)
   await off.unmount()
-  expect((await diet($, 'banda on')).text).toMatch(/activados/)
+
+  // La × la apaga y lo recuerda para las siguientes sesiones.
+  await diet($, 'banda on')
+  const shown = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await shown.press({ key: 'hide' })
+  expect(await shown.find({ text: /candidatos/ })).toBe(undefined)
+  expect(seen.store.get('band')).toBe(false)
+  await shown.unmount()
 })
 
 test('la fila de /diet se dibuja como etiqueta; una fila vieja queda como texto', async ($, on) => {

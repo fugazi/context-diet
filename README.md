@@ -15,7 +15,7 @@ El contexto no se gasta solo en la conversación. Antes del primer mensaje ya ha
 /diet --all           con cada server, skill, agente y archivo
 /diet --json          el reporte como JSON
 /diet panel           panel en vivo junto al chat
-/diet banda on|off    avisos sobre el prompt (activados por defecto)
+/diet banda on|off    avisos sobre el prompt (apagados por defecto)
 /diet reset           borra el historial entre sesiones
 ```
 
@@ -27,7 +27,7 @@ El contexto no se gasta solo en la conversación. Antes del primer mensaje ya ha
 - **Historial:** recuerda 30 días de sesiones, así que un veredicto no depende de una sola.
 - **Veredicto:** `USADO`, `OCASIONAL`, `CANDIDATO`, `OBSERVAR`, `FIJO`. Solo es candidato lo que no se usó en 3 o más sesiones.
 - **Acción asistida:** da el comando exacto y el ahorro por request. Nunca desactiva nada solo.
-- **Banda discreta:** una fila sobre el prompt que solo aparece con candidatos o con la compactación a 10 turnos o menos.
+- **Banda por demanda:** apagada por defecto. Con `/diet banda on`, una fila sobre el prompt avisa cuando hay candidatos o la compactación está a 10 turnos o menos; se cierra con su × o con `/diet banda off`.
 
 El texto que queda en el transcript es un resumen corto:
 
