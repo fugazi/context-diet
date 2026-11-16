@@ -1,6 +1,6 @@
 {
   "name": "context-diet",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Audit the context cost of MCP servers, skills, agents and memory files in a Claude Code session.",
   "license": "MIT",
   "types": "./types/index.d.ts",

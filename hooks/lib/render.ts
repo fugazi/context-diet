@@ -92,6 +92,14 @@ export function summarize(report: DietReport): DietSummary {
   }
 }
 
+/** El cambio del fijo desde la primera sesión guardada: `−17k (−26%)`. */
+export function changeText(report: DietReport): string {
+  const trend = report.trend
+  if (!trend || trend.delta === 0) return strings(report.lang).noChange
+  const sign = trend.delta < 0 ? '−' : '+'
+  return `${sign}${formatTokens(Math.abs(trend.delta))} (${sign}${Math.abs(trend.percent)}%)`
+}
+
 export function forecastText(report: DietReport): string {
   const t = strings(report.lang)
   const { forecast } = report
@@ -162,6 +170,12 @@ export function renderDetail(report: DietReport): string {
     [d.freeUntil(forecast.isAutoCompactEnabled), formatTokens(forecast.headroom)],
     [d.perTurn, forecast.perTurn === null ? d.unmeasured : `~${formatTokens(forecast.perTurn)}`],
     [d.turnsLeft, forecast.turnsLeft === null ? d.unmeasured : `~${forecast.turnsLeft}`],
+    ...(report.trend
+      ? [
+          [d.trendThen(t.trendWhen(report.trend.days)), `~${formatTokens(report.trend.baseline)}`],
+          [d.trendChange, changeText(report)],
+        ]
+      : []),
   ]))
 
   section(d.madeOf, '', table([d.part, d.tokens], summary.composition.map(part => [part.label, formatTokens(part.tokens)])))
@@ -271,11 +285,15 @@ export function renderReport(report: DietReport, options: { isDetailed?: boolean
 
   const percent = report.percent == null ? '' : ` (${report.percent}%)`
   const live = formatTokens(report.tokens ?? forecast.used)
-  const pad = Math.max(x.inUse.length, x.forecast.length, x.madeOf.length) + 2
+  const pad = Math.max(x.inUse.length, x.forecast.length, x.madeOf.length, x.diet.length) + 2
   lines.push(x.fixed(formatTokens(totals.fixed), summary.fixedPercent))
   lines.push(`  ${x.inUse.padEnd(pad)}${live} / ${formatTokens(report.window)}${percent}`)
   lines.push(`  ${x.forecast.padEnd(pad)}${forecastText(report)}`)
   lines.push(`  ${x.madeOf.padEnd(pad)}${summary.composition.map(part => `${part.label} ${formatTokens(part.tokens)}`).join(' · ')}`)
+  if (report.trend) {
+    const then = formatTokens(report.trend.baseline)
+    lines.push(`  ${x.diet.padEnd(pad)}${x.trend(t.trendWhen(report.trend.days), then, formatTokens(totals.fixed), changeText(report))}`)
+  }
   lines.push('')
 
   const own = summary.shown.length + summary.idle.length

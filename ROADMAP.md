@@ -55,9 +55,13 @@ Estado al 2026-11-14 · versión 1.1.0 · probado con Claude Code 2.1.325.
 - [x] Una lectura fallida del historial no lo sobrescribe; dos sesiones a la vez no se pisan.
 - [x] `CANDIDATO` exige no uso en 3+ días distintos, y solo cuentan las sesiones de 3+ turnos.
 
+### v1.5 — la dieta funcionó
+- [x] «Tu dieta»: cada sesión guarda su fijo por request, y el reporte compara el de ahora con el de la sesión más antigua del historial (`Hace 7 días: 65k → 48k, −17k (−26%)`). En el recuadro FIJO del panel, en el resumen y en `/diet --all`.
+- [x] README en inglés, con un panel plegable para leerlo en español.
+
 ## Siguiente
 
-### v1.5 — validar con uso real
+### v1.6 — validar con uso real
 - [ ] Usarlo una semana y ajustar `MIN_DAYS`, `MIN_TURNS` y el umbral de memoria pesada con esos datos.
 - [ ] QA visual de la etiqueta, el panel y la banda en terminal y en la app de escritorio (hoy solo los cubren los tests del árbol).
 - [ ] En escritorio, probar la barra como `Svg` en vez de caracteres de bloque.

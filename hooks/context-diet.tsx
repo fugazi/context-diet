@@ -26,8 +26,8 @@ const BAND_KEY = 'band'
 // Cambia la etiqueta cuando cambie la forma: descarta lo que guardó una
 // versión anterior, que sobrevive a un hot reload.
 const usageAtom = atom({ plugin: 'context-diet', key: 'usage' } as const, EMPTY_USAGE, { shape: 'usage-1' })
-const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-4' })
-const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-4' })
+const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-5' })
+const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-5' })
 const bandAtom = atom({ plugin: 'context-diet', key: 'band' } as const, false)
 // ACCIONES empieza plegado: lo abre quien quiera verlo.
 const foldedAtom = atom({ plugin: 'context-diet', key: 'folded' } as const, ['actions'] as string[], {

@@ -3,7 +3,7 @@
 // cada cabecera pliega su recuadro. Un mismo árbol para cada superficie.
 import type { DietReport, DietVerdict } from '../../types'
 import { LANGS, strings } from './i18n'
-import { formatTokens, noActionsText, summarize } from './render'
+import { changeText, formatTokens, noActionsText, summarize } from './render'
 
 /** La tabla de elementos de la superficie, de `$.ui.resolve(e)`. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -291,6 +291,22 @@ export function label(
           row(p.others(otherParts.length), formatTokens(otherParts.reduce((sum, part) => sum + part.tokens, 0)), {
             isDim: true,
           }),
+        dashes(),
+        <Text mono bold>
+          {p.trendTitle}
+        </Text>,
+        // La dieta en una cifra: el fijo de la primera sesión guardada contra el de ahora.
+        report.trend && row(t.trendWhen(report.trend.days), `~${formatTokens(report.trend.baseline)}`),
+        report.trend &&
+          row(p.trendChange, changeText(report), {
+            color: report.trend.delta < 0 ? 'success' : report.trend.delta > 0 ? 'warning' : undefined,
+            isStrong: report.trend.delta !== 0,
+          }),
+        !report.trend && (
+          <Text mono dimColor wrap="wrap">
+            {p.trendNone}
+          </Text>
+        ),
       ])}
 
       {card('left', p.leftTitle(forecast.isAutoCompactEnabled), leftMeta, () => [
