@@ -5,7 +5,7 @@ A Claude Code mod that audits the **context cost** of a session: which MCP serve
 > **Status:** v1.5.0, tested with Claude Code 2.1.325.
 
 <details>
-<summary><b>🇪🇸 Leer en español</b></summary>
+<summary><b>Spanish version</b></summary>
 
 <br>
 
