@@ -54,6 +54,14 @@ export const LABEL_MAX_WIDTH = 64
 const SUMMARY_PARTS = 4
 const SUMMARY_SKILLS = 4
 
+/** Ancho de la columna de historial: `12/30`. */
+const HISTORY_CELLS = 5
+
+/** En cuántas sesiones del historial se usó, de las que lo tuvieron presente. */
+export function historyCell(evidence: { sessions: number; usedSessions: number }): string {
+  return evidence.sessions === 0 ? '—' : `${evidence.usedSessions}/${evidence.sessions}`
+}
+
 /** Ancho de la columna de veredicto: el del más largo. */
 const TAG_CELLS = Math.max(...Object.values(VERDICT_LABEL).map(text => text.length))
 
@@ -86,7 +94,12 @@ export function leaderCells(name: string, value: string, width: number): { name:
   return { name: shown, dots: '.'.repeat(Math.max(0, room - shown.length)) }
 }
 
+const FIXED_VERDICTS: ReadonlySet<DietVerdict> = new Set(['info'])
+
 const percent = (share: number) => `${Math.round(share * 100)}%`
+
+/** Lo que ocupan, tras el valor, las columnas de historial y veredicto. */
+const TAIL_CELLS = HISTORY_CELLS + TAG_CELLS + 4
 
 type RowOptions = {
   /** Color del punto y del veredicto. */
@@ -95,6 +108,8 @@ type RowOptions = {
   mark?: string
   /** El veredicto, en su columna a la derecha. */
   tag?: string
+  /** `usadas/sesiones`, en su columna antes del veredicto. */
+  history?: string
   isDim?: boolean
   isStrong?: boolean
 }
@@ -123,7 +138,7 @@ export function label(
 
   const row = (name: string, value: string, opts: RowOptions = {}) => {
     const lead = opts.mark ? 2 : 0
-    const tail = opts.tag === undefined ? 0 : TAG_CELLS + 2
+    const tail = opts.tag === undefined ? 0 : TAIL_CELLS
     const cells = leaderCells(name, value, width - lead - tail)
     return (
       <Text mono wrap="truncate-end">
@@ -143,6 +158,12 @@ export function label(
           {value}
         </Text>
         {opts.tag !== undefined && (
+          <Text mono dimColor>
+            {'  '}
+            {(opts.history ?? '').padStart(HISTORY_CELLS)}
+          </Text>
+        )}
+        {opts.tag !== undefined && (
           <Text mono color={opts.color}>
             {'  '}
             {opts.tag.padStart(TAG_CELLS)}
@@ -151,6 +172,17 @@ export function label(
       </Text>
     )
   }
+
+  /** Los títulos de las columnas de una lista con veredicto, sobre sus valores. */
+  const columns = () => (
+    <Text mono dimColor wrap="truncate-end">
+      {'tokens'.padStart(width - TAIL_CELLS)}
+      {'  '}
+      {'usado'.padStart(HISTORY_CELLS)}
+      {'  '}
+      {'veredicto'.padStart(TAG_CELLS)}
+    </Text>
+  )
 
   /** Un estado: verde encendido, apagado en gris. */
   const state = (name: string, isOn: boolean) => (
@@ -279,6 +311,7 @@ export function label(
       ])}
 
       {card('mcp', 'MCP · tus servidores', `${formatTokens(ownLoaded)} cargados`, () => [
+        columns(),
         !hasOwn && summary.idle.length === 0 && (
           <Text mono dimColor>
             Ninguno en tu config.
@@ -289,6 +322,7 @@ export function label(
             mark: '●',
             color: VERDICT_COLOR[server.verdict],
             tag: VERDICT_LABEL[server.verdict],
+            history: historyCell(server.evidence),
           }),
         ),
         ...summary.missing.map(server => row(server.label, '?', { mark: '○', color: 'error', tag: 'SIN TOOLS' })),
@@ -314,11 +348,13 @@ export function label(
       ])}
 
       {card('skills', 'SKILLS · en el listado', formatTokens(totals.skills), () => [
+        columns(),
         ...skillRows.map(group =>
           row(group.skills > 1 ? `${group.label} (${group.skills})` : group.label, formatTokens(group.tokens), {
             mark: '●',
             color: VERDICT_COLOR[group.verdict],
             tag: VERDICT_LABEL[group.verdict],
+            history: FIXED_VERDICTS.has(group.verdict) && group.evidence.usedSessions === 0 ? '' : historyCell(group.evidence),
           }),
         ),
         otherSkills.length > 0 &&
@@ -353,6 +389,9 @@ export function label(
       ])}
 
       <Box flexDirection="column" paddingX={2} width={width + 4}>
+        <Text mono dimColor wrap="wrap">
+          «usado» = sesiones en que se usó / sesiones del historial. La de ahora cuenta al cerrar su primer turno.
+        </Text>
         <Text mono dimColor wrap="wrap">
           Historial: {report.history.sessions} {report.history.sessions === 1 ? 'sesión' : 'sesiones'} · Para conocer
           más comandos: /diet help

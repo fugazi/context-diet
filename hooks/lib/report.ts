@@ -4,6 +4,7 @@ import type { SessionUsage } from 'claude-code'
 import type {
   DietAgent,
   DietCategory,
+  DietCounter,
   DietEvidence,
   DietForecast,
   DietHistory,
@@ -17,8 +18,13 @@ import type {
   DietVerdict,
 } from '../../types'
 
-/** Sesiones con al menos un turno necesarias para llamar algo `candidate`. */
-export const MIN_SESSIONS = 3
+/**
+ * Para llamar algo `candidate` hace falta no haberlo usado en sesiones de
+ * `MIN_DAYS` días distintos, y solo cuentan las de `MIN_TURNS` turnos o más:
+ * tres sesiones cortas en una mañana no dicen si algo se usa.
+ */
+export const MIN_DAYS = 3
+export const MIN_TURNS = 3
 export const HISTORY_DAYS = 30
 export const HISTORY_MAX_SESSIONS = 200
 /** Un archivo de memoria por encima de esto se marca como pesado. */
@@ -53,6 +59,11 @@ export type ReportInput = {
   scopes: Record<string, DietScope>
   cwd: string
   now: number
+}
+
+/** La grafía con la que llegan los `tool.call` de un server: su clave en los contadores. */
+export function serverKey(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, '_')
 }
 
 export function skillGroupKey(source: string, pluginName?: string | null): string {
@@ -100,16 +111,57 @@ export function sanitizeHistory(value: unknown): DietHistory {
   return { sessions }
 }
 
+/**
+ * Los contadores de la sesión, con lo que su registro guardado ya sabía. Los
+ * contadores viven en `$.state`, que se vacía si la app reinicia o la sesión
+ * se reanuda; sin esto el registro guardado se pisaba con ceros. Es un máximo
+ * por clave, así que aplicarlo de más no cambia nada.
+ */
+export function restoreUsage(counters: DietUsage, record: DietSessionRecord | undefined): DietUsage {
+  if (!record) return counters
+  const lift = (table: Record<string, DietCounter>, stored: Record<string, number>) => {
+    const next = { ...table }
+    for (const [key, calls] of Object.entries(stored)) {
+      const now = next[key]
+      if (typeof calls !== 'number' || calls <= (now?.calls ?? 0)) continue
+      next[key] = { calls, errors: now?.errors ?? 0, lastAt: now?.lastAt ?? record.lastAt }
+    }
+    return next
+  }
+  // El registro guarda el nombre del config; los contadores, el de los `tool.call`.
+  const serverCalls = Object.fromEntries(
+    Object.entries(record.servers).map(([name, one]) => [serverKey(name), one?.calls ?? 0]),
+  )
+  return {
+    ...counters,
+    turns: Math.max(counters.turns, record.turns),
+    servers: lift(counters.servers, serverCalls),
+    skillGroups: lift(counters.skillGroups, record.skillGroups),
+    skills: lift(counters.skills, record.skills),
+  }
+}
+
+/** El día de calendario, en la hora local, en que empezó una sesión. */
+function dayKey(at: number): string {
+  const date = new Date(at)
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
+}
+
 function evidenceOf(
   history: DietHistory,
   pick: (record: DietSessionRecord) => number | undefined,
 ): DietEvidence {
-  const evidence: DietEvidence = { sessions: 0, usedSessions: 0, calls: 0, lastUsedAt: null }
+  const evidence: DietEvidence = { sessions: 0, days: 0, usedSessions: 0, calls: 0, lastUsedAt: null }
+  const days = new Set<string>()
   for (const record of Object.values(history.sessions)) {
     if (record.turns < 1) continue
     const calls = pick(record)
     if (calls === undefined) continue
+    // Un uso cuenta venga de donde venga; no haberlo usado solo dice algo en
+    // una sesión con trabajo de verdad.
+    if (calls <= 0 && record.turns < MIN_TURNS) continue
     evidence.sessions += 1
+    days.add(dayKey(record.startedAt))
     if (calls > 0) {
       evidence.usedSessions += 1
       evidence.calls += calls
@@ -118,13 +170,14 @@ function evidenceOf(
       }
     }
   }
+  evidence.days = days.size
   return evidence
 }
 
 function verdictOf(callsNow: number, evidence: DietEvidence): DietVerdict {
   if (callsNow > 0) return 'used'
   if (evidence.usedSessions > 0) return 'occasional'
-  if (evidence.sessions >= MIN_SESSIONS) return 'candidate'
+  if (evidence.days >= MIN_DAYS) return 'candidate'
   return 'watch'
 }
 
@@ -178,7 +231,7 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
     isConnected: false,
     calls: 0,
     errors: 0,
-    evidence: { sessions: 0, usedSessions: 0, calls: 0, lastUsedAt: null },
+    evidence: { sessions: 0, days: 0, usedSessions: 0, calls: 0, lastUsedAt: null },
     verdict: 'watch',
     saving: 0,
     action: null,
@@ -208,8 +261,7 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
   }
   for (const server of byName.values()) {
     // Un nombre de config con espacios llega normalizado en los `tool.call`.
-    const counter =
-      input.counters.servers[server.name] ?? input.counters.servers[server.name.replace(/[^a-zA-Z0-9_-]/g, '_')]
+    const counter = input.counters.servers[serverKey(server.name)] ?? input.counters.servers[server.name]
     server.calls = counter?.calls ?? 0
     server.errors = counter?.errors ?? 0
     server.evidence = evidenceOf(history, record => record.servers[server.name]?.calls)
@@ -244,7 +296,7 @@ function buildSkillGroups(input: ReportInput, history: DietHistory): DietSkillGr
         skills: 0,
         tokens: 0,
         loads: 0,
-        evidence: { sessions: 0, usedSessions: 0, calls: 0, lastUsedAt: null },
+        evidence: { sessions: 0, days: 0, usedSessions: 0, calls: 0, lastUsedAt: null },
         verdict: 'watch',
         saving: 0,
         action: null,
@@ -329,10 +381,12 @@ function currentRecord(
  * Construye el reporte y el historial ya actualizado con esta sesión.
  * La sesión en curso solo cuenta como evidencia si completó algún turno.
  */
-export function buildReport(input: ReportInput): { report: DietReport; history: DietHistory } {
+export function buildReport(input: ReportInput): { report: DietReport; history: DietHistory; counters: DietUsage } {
   const breakdown = input.usage.context.breakdown
   const id = String(input.usage.startedAt)
   const pruned = pruneHistory(input.history, input.now)
+  // Lo que el registro de esta sesión ya tenía no se pierde con un reinicio.
+  input = { ...input, counters: restoreUsage(input.counters, pruned.sessions[id]) }
 
   // Primera pasada sin evidencia, solo para saber qué hay presente ahora.
   const present = currentRecord(input, buildServers(input, EMPTY_HISTORY), buildSkillGroups(input, EMPTY_HISTORY))
@@ -364,7 +418,8 @@ export function buildReport(input: ReportInput): { report: DietReport; history: 
     .sort((a, b) => b.tokens - a.tokens)
   const forecast = buildForecast(input, categories)
   const candidates = [...servers, ...skillGroups].filter(item => item.verdict === 'candidate')
-  const stamps = Object.values(history.sessions).map(record => record.startedAt)
+  const counted = Object.values(history.sessions).filter(record => record.turns > 0)
+  const stamps = counted.map(record => record.startedAt)
   const instructions = categories
     .filter(row => /mcp server instructions/i.test(row.name))
     .reduce((sum, row) => sum + row.tokens, 0)
@@ -394,11 +449,13 @@ export function buildReport(input: ReportInput): { report: DietReport; history: 
     memory,
     forecast,
     history: {
-      sessions: Object.values(history.sessions).filter(record => record.turns > 0).length,
+      sessions: counted.length,
       days: stamps.length ? Math.max(1, Math.ceil((input.now - Math.min(...stamps)) / DAY_MS)) : 0,
-      minSessions: MIN_SESSIONS,
+      evidenceDays: new Set(counted.filter(record => record.turns >= MIN_TURNS).map(record => dayKey(record.startedAt))).size,
+      minDays: MIN_DAYS,
+      minTurns: MIN_TURNS,
     },
     turns: input.counters.turns,
   }
-  return { report, history }
+  return { report, history, counters: input.counters }
 }

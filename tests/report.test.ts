@@ -1,8 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 
-import { buildReport, parseMcpTool, pruneHistory, sanitizeHistory, serverLabel } from '../hooks/lib/report'
+import { EMPTY_USAGE, buildReport, parseMcpTool, pruneHistory, restoreUsage, sanitizeHistory, serverLabel } from '../hooks/lib/report'
 import { leaderCells, splitCells } from '../hooks/lib/label'
 import { formatTokens, renderReport, summarize } from '../hooks/lib/render'
+import type { DietHistory } from '../types'
 import { DAY, NOW, counters, pastSession, usageFixture } from './fixtures'
 
 const SCOPES = { firecrawl: 'user', 'brave-search': 'project', ableton: 'user' } as const
@@ -104,11 +105,11 @@ test('sin historial nada es candidato: una sesión no es evidencia', () => {
   expect(report.totals.potentialSaving).toBe(0)
 })
 
-test('candidato: sin uso en 3+ sesiones, con acción y ahorro', () => {
+test('candidato: sin uso en 3+ días distintos, con acción y ahorro', () => {
   const history = { sessions: { a: pastSession(1), b: pastSession(2) } }
-  const { report } = build({ history, counters: counters({ turns: 2 }) })
+  const { report } = build({ history, counters: counters({ turns: 3 }) })
   const firecrawl = server(report, 'firecrawl')
-  expect(firecrawl.evidence.sessions).toBe(3)
+  expect([firecrawl.evidence.sessions, firecrawl.evidence.days]).toEqual([3, 3])
   expect(firecrawl.verdict).toBe('candidate')
   expect(firecrawl.saving).toBe(8000)
   expect(firecrawl.action).toBe('claude mcp remove -s user firecrawl')
@@ -117,6 +118,27 @@ test('candidato: sin uso en 3+ sesiones, con acción y ahorro', () => {
   expect(server(report, 'claude_ai_Docs').action).toMatch(/Conectores/)
   // Un server configurado pero sin tools nunca estuvo presente: no se juzga.
   expect(server(report, 'ableton').verdict).toBe('watch')
+})
+
+test('sesiones cortas o del mismo día no bastan para un candidato', () => {
+  const verdict = (history: DietHistory, turns = 0) =>
+    server(build({ history, counters: counters({ turns }) }).report, 'firecrawl')
+
+  // Cinco sesiones largas, todas el mismo día: un solo día de evidencia.
+  const sameDay = Object.fromEntries([1, 2, 3, 4, 5].map(n => [`s${n}`, { ...pastSession(1), startedAt: NOW - DAY + n * 60_000 }]))
+  expect([verdict({ sessions: sameDay }).evidence.days, verdict({ sessions: sameDay }).verdict]).toEqual([1, 'watch'])
+
+  // Tres días distintos, pero sesiones de un turno: no cuentan.
+  const short = { sessions: { a: { ...pastSession(1), turns: 1 }, b: { ...pastSession(2), turns: 2 }, c: { ...pastSession(3), turns: 1 } } }
+  expect([verdict(short).evidence.sessions, verdict(short).verdict]).toEqual([0, 'watch'])
+  expect(build({ history: short }).report.history).toEqual({ sessions: 3, days: 3, evidenceDays: 0, minDays: 3, minTurns: 3 })
+
+  // Un uso sí cuenta aunque la sesión fuera corta: pasa a ocasional.
+  const used = { sessions: { a: { ...pastSession(1, { servers: { firecrawl: { calls: 2, loadedTokens: 8000 } } }), turns: 1 } } }
+  expect(verdict(used).verdict).toBe('occasional')
+
+  // Tres días con sesiones de trabajo real: candidato.
+  expect(verdict({ sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } }).verdict).toBe('candidate')
 })
 
 test('usado ahora gana; usado antes es ocasional, nunca candidato', () => {
@@ -232,6 +254,26 @@ test('la barra reparte todas sus celdas', () => {
   expect(splitCells([0.5, 0.5, 0], 9).reduce((sum, size) => sum + size, 0)).toBe(9)
 })
 
+test('una sesión reanudada recupera lo que su registro ya tenía', () => {
+  const usage = usageFixture({ tokens: 38100 })
+  const id = String(usage.startedAt)
+  const before = build({ usage, counters: { ...EMPTY_USAGE, turns: 5, servers: { firecrawl: { calls: 4, errors: 0, lastAt: NOW } }, skillGroups: { 'plugin:agent-skills': { calls: 2, errors: 0, lastAt: NOW } } } })
+  expect(before.history.sessions[id]?.servers.firecrawl?.calls).toBe(4)
+
+  // La app reinicia: contadores en cero, y luego una llamada nueva a otro server.
+  const after = build({ usage, history: before.history, counters: { ...EMPTY_USAGE, turns: 1, servers: { 'brave-search': { calls: 1, errors: 0, lastAt: NOW } } } })
+  const record = after.history.sessions[id]
+  expect([record?.turns, record?.servers.firecrawl?.calls, record?.servers['brave-search']?.calls]).toEqual([5, 4, 1])
+  expect(record?.skillGroups['plugin:agent-skills']).toBe(2)
+  expect(after.report.servers.find(server => server.name === 'firecrawl')?.verdict).toBe('used')
+  // Aplicarlo otra vez no suma nada.
+  expect(restoreUsage(after.counters, record)).toEqual(after.counters)
+
+  // Un nombre de config con espacios vuelve bajo la grafía de los `tool.call`.
+  const spaced = { ...pastSession(0), servers: { 'my server': { calls: 5, loadedTokens: 0 } } }
+  expect(restoreUsage(EMPTY_USAGE, spaced).servers.my_server?.calls).toBe(5)
+})
+
 test('una fila con puntos guía mide el ancho exacto y recorta el nombre', () => {
   const cells = (name: string, value: string, width: number) => {
     const row = leaderCells(name, value, width)
@@ -268,6 +310,8 @@ test('texto: resumen corto por defecto y todo con --all', () => {
   expect(all).toContain('| reviewer | plugin | 700 | 0 |')
   expect(all).toContain('| `/work/CLAUDE.md` | Project | 1.2k |  |')
   expect(all).toContain('| −8k | `claude mcp remove -s user firecrawl` |')
+  // Una indicación que no es un comando va como prosa, no como código.
+  expect(all).toMatch(/\| mueve la carpeta de la skill "\w+" fuera de ~\/\.claude\/skills \|/)
   expect(formatTokens(1_500_000)).toBe('1.5M')
   expect(formatTokens(null)).toBe('?')
 })

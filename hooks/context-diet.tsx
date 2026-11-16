@@ -5,9 +5,18 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { DietCounter, DietHistory, DietReport, DietScope, DietUsage } from '../types'
-import { EMPTY_HISTORY, EMPTY_USAGE, buildReport, parseMcpTool, sanitizeHistory, skillGroupKey } from './lib/report'
+import {
+  EMPTY_HISTORY,
+  EMPTY_USAGE,
+  buildReport,
+  parseMcpTool,
+  restoreUsage,
+  pruneHistory,
+  sanitizeHistory,
+  skillGroupKey,
+} from './lib/report'
 import { SECTIONS, label, labelWidth } from './lib/label'
-import { renderReport, reportStamp, summarize } from './lib/render'
+import { formatTokens, renderReport, reportStamp, summarize } from './lib/render'
 
 const PANE = 'context-diet'
 const PANE_TITLE = 'Context Diet'
@@ -36,7 +45,7 @@ const HELP = [
   '| --- | --- |',
   '| `USADO` | Se usó en esta sesión. |',
   '| `OCASIONAL` | No se usó ahora, pero sí en otras sesiones. Nunca se propone quitarlo. |',
-  '| `CANDIDATO` | Sin uso en 3 o más sesiones. Trae el comando para quitarlo y el ahorro. |',
+  '| `CANDIDATO` | Sin uso en 3 o más días distintos (cuentan las sesiones de 3 turnos o más). Trae el comando para quitarlo y el ahorro. |',
   '| `OBSERVAR` | Sin uso, pero todavía con poca evidencia. |',
   '| `FIJO` | Skills integradas o sincronizadas, que no puedes quitar. |',
   '| `SIN TOOLS` | Server configurado que no aportó tools (desconectado o aún conectando). |',
@@ -45,8 +54,8 @@ const HELP = [
 // Cambia la etiqueta cuando cambie la forma: descarta lo que guardó una
 // versión anterior, que sobrevive a un hot reload.
 const usageAtom = atom({ plugin: 'context-diet', key: 'usage' } as const, EMPTY_USAGE, { shape: 'usage-1' })
-const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-2' })
-const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-2' })
+const reportAtom = atom({ plugin: 'context-diet', key: 'report' } as const, null, { shape: 'report-3' })
+const printedAtom = atom({ plugin: 'context-diet', key: 'printed' } as const, null, { shape: 'report-3' })
 const bandAtom = atom({ plugin: 'context-diet', key: 'band' } as const, false)
 // ACCIONES empieza plegado: lo abre quien quiera verlo.
 const foldedAtom = atom({ plugin: 'context-diet', key: 'folded' } as const, ['actions'] as string[], {
@@ -83,8 +92,8 @@ function serverNames(value: unknown): string[] {
  * De dónde viene cada server configurado. Solo se leen los nombres: nunca
  * `env`, `headers` ni argumentos.
  */
-async function collectScopes($: Engine, cwd: string): Promise<Record<string, DietScope>> {
-  if (scopesCache && scopesCache.cwd === cwd) return scopesCache.scopes
+async function collectScopes($: Engine, cwd: string, isFresh = false): Promise<Record<string, DietScope>> {
+  if (!isFresh && scopesCache && scopesCache.cwd === cwd) return scopesCache.scopes
   const scopes: Record<string, DietScope> = {}
   let home: string | undefined
   try {
@@ -112,34 +121,46 @@ async function collectScopes($: Engine, cwd: string): Promise<Record<string, Die
   return scopes
 }
 
-async function loadHistory($: Engine): Promise<DietHistory> {
+/** El historial guardado, o null si no se pudo leer (no es lo mismo que vacío). */
+async function loadHistory($: Engine): Promise<DietHistory | null> {
   try {
     return sanitizeHistory(await $.store.get(HISTORY_KEY))
   } catch {
-    return EMPTY_HISTORY
+    return null
   }
 }
 
-/** Mide, arma el reporte, lo publica en `$.state` y guarda el historial. */
-async function refresh($: Engine): Promise<DietReport> {
+/**
+ * Mide, arma el reporte, lo publica en `$.state` y guarda el historial.
+ * `isFresh` (lo pide una persona, no el cierre de un turno) relee los configs
+ * de MCP, que pueden cambiar a mitad de sesión.
+ */
+async function refresh($: Engine, isFresh = false): Promise<DietReport> {
   let cwd = '.'
   try {
     cwd = await $.session.cwd()
   } catch {
     // Se queda el relativo.
   }
-  const [usage, counters, history, scopes, now] = await Promise.all([
+  const [usage, counters, stored, scopes, now] = await Promise.all([
     $.session.usage({ breakdown: 'summary' }),
     read($, usageAtom),
     loadHistory($),
-    collectScopes($, cwd),
+    collectScopes($, cwd, isFresh),
     $.clock.now(),
   ])
-  const built = buildReport({ usage, counters, history, scopes, cwd, now })
+  const built = buildReport({ usage, counters, history: stored ?? EMPTY_HISTORY, scopes, cwd, now })
   await update($, reportAtom, () => built.report)
-  if (counters.turns > 0) {
+  // Tras un reinicio los contadores vuelven de lo guardado: se siguen desde ahí.
+  if (built.counters !== counters) await update($, usageAtom, live => restoreUsage(live, built.history.sessions[String(usage.startedAt)]))
+  const id = String(usage.startedAt)
+  const mine = built.history.sessions[id]
+  // Una lectura fallida no es un historial vacío: escribir ahora lo borraría.
+  if (mine && stored) {
     try {
-      await $.store.set(HISTORY_KEY, built.history)
+      // Otra sesión pudo guardar mientras se medía: se relee y solo se pone lo propio.
+      const latest = await loadHistory($)
+      if (latest) await $.store.set(HISTORY_KEY, { sessions: { ...pruneHistory(latest, now).sessions, [id]: mine } })
     } catch {
       // Sin historial el reporte de la sesión sigue valiendo.
     }
@@ -175,6 +196,14 @@ export const register: Register = on => {
       await update($, bandAtom, () => isOn)
     } catch {
       // Sin preferencia guardada, la banda queda apagada.
+    }
+    try {
+      // Una sesión reanudada recupera sus contadores antes de la primera llamada.
+      const [usage, history] = await Promise.all([$.session.usage(), loadHistory($)])
+      const record = history?.sessions[String(usage.startedAt)]
+      if (record) await update($, usageAtom, live => restoreUsage(live, record))
+    } catch {
+      // Sin esto se recuperan en la primera medición.
     }
     return next(e)
   })
@@ -256,7 +285,7 @@ export const register: Register = on => {
             : 'Context Diet: avisos sobre el prompt apagados.',
       }
     }
-    const report = await refresh($)
+    const report = await refresh($, true)
     if (args === 'panel' || args === '--panel') {
       const { isPlaced } = await $.ui.open({ id: PANE, title: PANE_TITLE })
       return { text: isPlaced ? 'Context Diet: Panel visual abierto.' : renderReport(report) }
@@ -288,7 +317,7 @@ export const register: Register = on => {
     const kit = $.ui.resolve(e)
     const { Box, Text, Button } = kit
     const [report, folded] = await Promise.all([read($, reportAtom), read($, foldedAtom)])
-    const reload = <Button key="refresh" label="Actualizar" hotkey="r" onPress={() => void refresh($)} />
+    const reload = <Button key="refresh" label="Actualizar" hotkey="r" onPress={() => void refresh($, true).catch(() => undefined)} />
     if (!report) {
       return (
         <Box flexDirection="column">
@@ -298,7 +327,7 @@ export const register: Register = on => {
       )
     }
     if (e.props.placement === 'widget') {
-      return <Text>{summarize(report).alert ?? `fijo ${report.totals.fixed} tokens por request`}</Text>
+      return <Text>{summarize(report).alert ?? `fijo ${formatTokens(report.totals.fixed)} por request`}</Text>
     }
     return (
       <Box flexDirection="column" gap={1} paddingBottom={1}>

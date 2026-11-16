@@ -49,10 +49,16 @@ Estado al 2026-11-14 · versión 1.1.0 · probado con Claude Code 2.1.325.
 - [x] La banda sobre el prompt pasa a ser por demanda (`/diet status on`) y trae una × para cerrarla.
 - [x] `/diet help` en tablas: comandos y cómo leer los veredictos.
 
+### v1.3 — historial fiable
+- [x] La sesión recupera sus contadores tras un reinicio o al reanudarse: su registro ya no se pisa con ceros.
+- [x] Columna «usado» en el panel: sesiones en que se usó cada MCP y skill, sobre las del historial.
+- [x] Una lectura fallida del historial no lo sobrescribe; dos sesiones a la vez no se pisan.
+- [x] `CANDIDATO` exige no uso en 3+ días distintos, y solo cuentan las sesiones de 3+ turnos.
+
 ## Siguiente
 
-### v1.3 — validar con uso real
-- [ ] Usarlo una semana: los veredictos necesitan 3+ sesiones reales. Ajustar `MIN_SESSIONS` y el umbral de memoria pesada con esos datos.
+### v1.4 — validar con uso real
+- [ ] Usarlo una semana y ajustar `MIN_DAYS`, `MIN_TURNS` y el umbral de memoria pesada con esos datos.
 - [ ] QA visual de la etiqueta, el panel y la banda en terminal y en la app de escritorio (hoy solo los cubren los tests del árbol).
 - [ ] En escritorio, probar la barra como `Svg` en vez de caracteres de bloque.
 - [ ] `/diet --full`: desglose contado con la API de tokens, para comparar contra el estimado local.

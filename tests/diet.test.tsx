@@ -35,6 +35,11 @@ const BAND = {
 } as const
 
 type World = {
+  /** Hace fallar la lectura del historial, como un store ilegible. */
+  isHistoryBroken: boolean
+  /** Corre antes de cada lectura del historial, con su número de orden. */
+  onHistoryRead?: (count: number) => void
+  historyReads: number
   usageCalls: unknown[]
   files: Record<string, string>
   store: Map<string, unknown>
@@ -43,6 +48,8 @@ type World = {
 /** Lo que hay debajo del mod: cada hook aquí hace de motor. */
 function world(on: On, options: { store?: Record<string, unknown>; tokens?: number } = {}): World {
   const seen: World = {
+    isHistoryBroken: false,
+    historyReads: 0,
     usageCalls: [],
     store: new Map(Object.entries(options.store ?? {})),
     files: {
@@ -55,7 +62,15 @@ function world(on: On, options: { store?: Record<string, unknown>; tokens?: numb
   }
   mock.env(on, { HOME: '/home/u' })
   // Un store propio en memoria, para poder leer lo que el mod guardó.
-  on('store.get', (_, e) => ({ value: seen.store.get((e as { key: string }).key) }))
+  on('store.get', (_, e) => {
+    const key = (e as { key: string }).key
+    if (key === HISTORY_KEY) {
+      if (seen.isHistoryBroken) throw new Error('EIO')
+      seen.historyReads += 1
+      seen.onHistoryRead?.(seen.historyReads)
+    }
+    return { value: seen.store.get(key) }
+  })
   on('store.set', (_, e) => {
     const write = e as { key: string; value: unknown }
     seen.store.set(write.key, JSON.parse(JSON.stringify(write.value)))
@@ -104,7 +119,7 @@ test('/diet imprime el resumen con el desglose real y no lee secretos', async ($
   expect(text).toContain('sin costo ni uso: brave-search')
   expect(text).toMatch(/SIN TOOLS\s+ableton \[project\]/)
   expect(text).toContain('APP DE CLAUDE Y PLUGINS · 1 servers')
-  expect(text).toMatch(/faltan 3 sesión\(es\) de historial/)
+  expect(text).toMatch(/faltan 3 día\(s\) con sesiones de 3\+ turnos/)
   expect(text).not.toContain('sk-secreto')
   // Pide el desglose local, sin requests a la API de conteo.
   expect(seen.usageCalls).toContainEqual({ breakdown: 'summary' })
@@ -167,6 +182,11 @@ test('el historial se guarda al cerrar un turno y produce candidatos', async ($,
   await $.tool.call({ tool: 'mcp__brave-search__web' } as never)
   await $.turn.complete(TURN as never)
 
+  // Un turno no basta: una sesión corta no prueba que algo no se use.
+  expect((await diet($, '')).text).toMatch(/OBSERVAR\s+firecrawl[^\n]*usado en 0\/2 sesiones/)
+  await $.turn.complete(TURN as never)
+  await $.turn.complete(TURN as never)
+
   expect(Object.keys(saved().sessions).sort()).toEqual([String(STARTED), 'a', 'b'].sort())
   expect(saved().sessions[String(STARTED)]?.servers['brave-search']?.calls).toBe(1)
 
@@ -183,6 +203,50 @@ test('un turno de subagente no cuenta como turno de la sesión', async ($, on) =
   await $.turn.complete({ ...TURN, agentId: 'a1' } as never)
   const report = JSON.parse((await diet($, '--json')).text ?? '') as DietReport
   expect(report.turns).toBe(0)
+})
+
+test('tras un reinicio la sesión sigue contando desde lo guardado', async ($, on) => {
+  // El registro de esta misma sesión, de antes de que la app reiniciara.
+  const mine = { ...pastSession(0), startedAt: STARTED, turns: 4, servers: { firecrawl: { calls: 3, loadedTokens: 8000 } } }
+  const seen = world(on, { store: { [HISTORY_KEY]: { sessions: { [String(STARTED)]: mine } } } })
+  await start($)
+
+  await $.tool.call({ tool: 'mcp__firecrawl__scrape' } as never)
+  await $.turn.complete(TURN as never)
+
+  const report = JSON.parse((await diet($, '--json')).text ?? '') as DietReport
+  expect(report.servers.find(server => server.name === 'firecrawl')?.calls).toBe(4)
+  expect(report.turns).toBe(5)
+  const saved = (seen.store.get(HISTORY_KEY) as DietHistory).sessions[String(STARTED)]
+  expect([saved?.turns, saved?.servers.firecrawl?.calls]).toEqual([5, 4])
+})
+
+test('si el historial no se puede leer, no se sobrescribe', async ($, on) => {
+  const past = { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } }
+  const seen = world(on, { store: { [HISTORY_KEY]: past } })
+  await start($)
+
+  seen.isHistoryBroken = true
+  await $.turn.complete(TURN as never)
+  // El reporte sale igual, sin historial; lo guardado queda intacto.
+  expect((await diet($, '')).text).toMatch(/OBSERVAR\s+firecrawl/)
+  expect(seen.store.get(HISTORY_KEY)).toEqual(past)
+
+  seen.isHistoryBroken = false
+  await $.turn.complete(TURN as never)
+  expect(Object.keys((seen.store.get(HISTORY_KEY) as DietHistory).sessions).sort()).toEqual([String(STARTED), 'a', 'b', 'c'].sort())
+})
+
+test('lo que otra sesión guarda mientras se mide no se pierde', async ($, on) => {
+  const seen = world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1) } } } })
+  await start($)
+  const reads = seen.historyReads
+  // Tras la primera lectura de la medición, otra sesión guarda la suya.
+  seen.onHistoryRead = count => {
+    if (count === reads + 2) seen.store.set(HISTORY_KEY, { sessions: { a: pastSession(1), otra: pastSession(0) } })
+  }
+  await $.turn.complete(TURN as never)
+  expect(Object.keys((seen.store.get(HISTORY_KEY) as DietHistory).sessions).sort()).toEqual([String(STARTED), 'a', 'otra'].sort())
 })
 
 test('/diet reset borra el historial', async ($, on) => {
@@ -245,7 +309,8 @@ test('la fila de /diet se dibuja como etiqueta; una fila vieja queda como texto'
     const ui = await $.ui.mount({ ...ROW, props, surface })
     expect(await ui.find({ type: 'Text', text: /^Context Diet$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^~30\.3k$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /firecrawl.*8k.*CANDIDATO/ })).toBeDefined()
+    // Con su columna de historial: usado en 0 de 3 sesiones.
+    expect(await ui.find({ type: 'Text', text: /firecrawl \.+ 8k\s+0\/3\s+CANDIDATO/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /App de Claude y plugins \(1\).* 1k .*FIJO/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /claude mcp remove -s user firecrawl/ })).toBeDefined()
     // El resumen no lista lo de la app; --all sí.
