@@ -110,9 +110,26 @@ context-diet/
 └── ROADMAP.md
 ```
 
+## Qué intercepta el mod
+
+El mod solo observa. Ninguno de sus hooks cambia una llamada a una tool, el texto de una skill, un prompt ni un ajuste, y no registra tools, agentes ni secciones de prompt.
+
+| Hook | Qué hace |
+| --- | --- |
+| `session.start` | Registra el comando `/diet` y recupera los contadores de esta sesión desde su registro guardado. Pasa el evento sin cambios. |
+| `tool.call` | Deja correr la llamada y luego la cuenta si es de una tool MCP o un subagente. Lee el nombre de la tool y si falló; nunca sus argumentos ni su resultado. No deniega ni reescribe llamadas. |
+| `skill.prompt` | Cuenta qué skill se cargó y pasa su texto sin cambios. |
+| `turn.complete` | Cuenta el turno, mide el contexto y guarda el registro de la sesión en el historial. |
+| `command.run` (solo `diet`) | Responde a `/diet` y sus argumentos. |
+| `ui.render` | Dibuja lo suyo: la fila de `/diet` en el transcript, el panel y la fila opcional sobre el prompt. |
+
 ## Privacidad
 
-Todo queda en la máquina. De los archivos de config solo se leen los nombres de los servers MCP: nunca `env`, `headers` ni argumentos. El historial guarda nombres y contadores.
+Todo queda en tu máquina: el mod no hace peticiones de red ni envía nada a ningún sitio.
+
+- **Archivos que lee:** `~/.claude.json` y el `.mcp.json` del proyecto, para saber dónde está configurado cada server MCP (user, project o local). De ellos toma solo los nombres de los servers, las claves de `mcpServers`. Nunca lee ni guarda `env`, `headers`, argumentos, tokens ni ningún otro valor.
+- **Entorno:** lee `HOME`, solo para encontrar `~/.claude.json`.
+- **Qué guarda:** un historial de nombres de servers y skills con sus contadores, en el almacén propio del plugin en tu máquina. `/diet reset` lo borra.
 
 ## Documentación
 

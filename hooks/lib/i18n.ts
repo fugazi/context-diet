@@ -71,7 +71,7 @@ const es = {
     forecast: 'pronóstico',
     madeOf: 'hecho de',
     diet: 'dieta',
-    trend: (when: string, then: string, now: string, change: string) => `${when}: ${then} → ${now}, ${change}`,
+    trend: (when: string, before: string, now: string, change: string) => `${when}: ${before} → ${now}, ${change}`,
     servers: (count: number) => `TUS SERVIDORES MCP (${count})`,
     none: 'ninguno',
     idle: (names: string) => `sin costo ni uso: ${names} (diferidos, 0 por request)`,
@@ -80,8 +80,8 @@ const es = {
     deferred: (servers: number, tokens: string) => `DIFERIDO · ${servers} servers · ${tokens} tras ToolSearch · 0 por request`,
     skills: (tokens: string) => `SKILLS · ${tokens} en el listado`,
     more: (count: number) => `… ${count} más`,
-    agentsMemory: (agents: number, agentTokens: string, files: number, memoryTokens: string, heavy: number) =>
-      `AGENTES ${agents} · ${agentTokens}   MEMORIA ${files} · ${memoryTokens}${heavy ? ` (${heavy} ${plural(heavy, 'pesado', 'pesados')})` : ''}`,
+    agentsMemory: (agents: number, agentSize: string, files: number, memorySize: string, heavy: number) =>
+      `AGENTES ${agents} · ${agentSize}   MEMORIA ${files} · ${memorySize}${heavy ? ` (${heavy} ${plural(heavy, 'pesado', 'pesados')})` : ''}`,
     actions: 'ACCIONES',
     saving: (tokens: string) => `ahorro potencial: ${tokens} por request`,
     trimMemory: (count: number) => `recorta ${count} archivo(s) de memoria pesado(s): se envían enteros en cada request`,
@@ -281,7 +281,7 @@ const en: Strings = {
     forecast: 'forecast',
     madeOf: 'made of',
     diet: 'diet',
-    trend: (when, then, now, change) => `${when}: ${then} → ${now}, ${change}`,
+    trend: (when, before, now, change) => `${when}: ${before} → ${now}, ${change}`,
     servers: count => `YOUR MCP SERVERS (${count})`,
     none: 'none',
     idle: names => `no cost and no use: ${names} (deferred, 0 per request)`,
@@ -290,8 +290,8 @@ const en: Strings = {
     deferred: (servers, tokens) => `DEFERRED · ${servers} servers · ${tokens} behind ToolSearch · 0 per request`,
     skills: tokens => `SKILLS · ${tokens} in the listing`,
     more: count => `… ${count} more`,
-    agentsMemory: (agents, agentTokens, files, memoryTokens, heavy) =>
-      `AGENTS ${agents} · ${agentTokens}   MEMORY ${files} · ${memoryTokens}${heavy ? ` (${heavy} heavy)` : ''}`,
+    agentsMemory: (agents, agentSize, files, memorySize, heavy) =>
+      `AGENTS ${agents} · ${agentSize}   MEMORY ${files} · ${memorySize}${heavy ? ` (${heavy} heavy)` : ''}`,
     actions: 'ACTIONS',
     saving: tokens => `potential saving: ${tokens} per request`,
     trimMemory: count => `trim ${count} heavy memory file(s): each is sent whole on every request`,

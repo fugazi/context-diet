@@ -381,7 +381,7 @@ test('en el panel cada cabecera pliega su recuadro; la ayuda va en tablas', ES, 
   expect(await ui.find({ type: 'Text', text: /recorta .*CLAUDE\.md/ })).toBe(undefined)
   await ui.press({ key: 'fold-actions' })
   expect(await ui.find({ type: 'Text', text: /recorta .*CLAUDE\.md/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Desarrollado por Douglas Fugazi · https:\/\/douglasfugazi\.co/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Desarrollado por Douglas Fugazi' })).toBeDefined()
 
   // Plegado conserva la cabecera con su total y suelta las filas.
   await ui.press({ key: 'fold-skills' })
