@@ -5,6 +5,8 @@ import type { DietHistory, DietReport } from '../types'
 import { DAY, NOW, STARTED, pastSession, usageFixture } from './fixtures'
 
 const HISTORY_KEY = 'history-1'
+/** Los textos de estos tests son los del castellano. */
+const ES = { options: { language: 'es' } } as const
 const PANE = {
   plugin: 'context-diet',
   component: 'Pane',
@@ -109,7 +111,7 @@ const diet = ($: { command: { run: (e: never) => Promise<{ text?: string }> } },
 
 const TURN = { answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' }
 
-test('/diet imprime el resumen con el desglose real y no lee secretos', async ($, on) => {
+test('/diet imprime el resumen con el desglose real y no lee secretos', ES, async ($, on) => {
   const seen = world(on)
   await start($)
 
@@ -131,7 +133,7 @@ test('/diet imprime el resumen con el desglose real y no lee secretos', async ($
   expect(all).toContain('**Tus servidores MCP**')
 })
 
-test('/diet --json es parseable y los argumentos desconocidos muestran la ayuda', async ($, on) => {
+test('/diet --json es parseable y los argumentos desconocidos muestran la ayuda', ES, async ($, on) => {
   world(on)
   await start($)
 
@@ -147,10 +149,10 @@ test('/diet --json es parseable y los argumentos desconocidos muestran la ayuda'
   expect(JSON.stringify(report)).not.toContain('sk-secreto')
 
   expect((await diet($, 'nope')).text).toMatch(/Argumento desconocido[\s\S]*\/diet panel/)
-  expect((await diet($, 'banda')).text).toBe('Uso: /diet banda on|off')
+  expect((await diet($, 'banda')).text).toBe('Uso: /diet status on|off')
 })
 
-test('cuenta llamadas MCP con sus errores, subagentes y skills', async ($, on) => {
+test('cuenta llamadas MCP con sus errores, subagentes y skills', ES, async ($, on) => {
   world(on)
   await start($)
 
@@ -169,7 +171,7 @@ test('cuenta llamadas MCP con sus errores, subagentes y skills', async ($, on) =
   expect(loads).toEqual({ 'plugin:agent-skills': 1, 'built-in': 0, 'skill:ctx': 1, 'skill:notes': 0 })
 })
 
-test('el historial se guarda al cerrar un turno y produce candidatos', async ($, on) => {
+test('el historial se guarda al cerrar un turno y produce candidatos', ES, async ($, on) => {
   const store: DietHistory = { sessions: { a: pastSession(1), b: pastSession(2) } }
   const seen = world(on, { store: { [HISTORY_KEY]: store } })
   const saved = () => seen.store.get(HISTORY_KEY) as DietHistory
@@ -197,7 +199,7 @@ test('el historial se guarda al cerrar un turno y produce candidatos', async ($,
   expect(text).toMatch(/claude plugin disable agent-skills/)
 })
 
-test('un turno de subagente no cuenta como turno de la sesión', async ($, on) => {
+test('un turno de subagente no cuenta como turno de la sesión', ES, async ($, on) => {
   world(on)
   await start($)
   await $.turn.complete({ ...TURN, agentId: 'a1' } as never)
@@ -205,7 +207,7 @@ test('un turno de subagente no cuenta como turno de la sesión', async ($, on) =
   expect(report.turns).toBe(0)
 })
 
-test('tras un reinicio la sesión sigue contando desde lo guardado', async ($, on) => {
+test('tras un reinicio la sesión sigue contando desde lo guardado', ES, async ($, on) => {
   // El registro de esta misma sesión, de antes de que la app reiniciara.
   const mine = { ...pastSession(0), startedAt: STARTED, turns: 4, servers: { firecrawl: { calls: 3, loadedTokens: 8000 } } }
   const seen = world(on, { store: { [HISTORY_KEY]: { sessions: { [String(STARTED)]: mine } } } })
@@ -221,7 +223,7 @@ test('tras un reinicio la sesión sigue contando desde lo guardado', async ($, o
   expect([saved?.turns, saved?.servers.firecrawl?.calls]).toEqual([5, 4])
 })
 
-test('si el historial no se puede leer, no se sobrescribe', async ($, on) => {
+test('si el historial no se puede leer, no se sobrescribe', ES, async ($, on) => {
   const past = { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } }
   const seen = world(on, { store: { [HISTORY_KEY]: past } })
   await start($)
@@ -237,7 +239,7 @@ test('si el historial no se puede leer, no se sobrescribe', async ($, on) => {
   expect(Object.keys((seen.store.get(HISTORY_KEY) as DietHistory).sessions).sort()).toEqual([String(STARTED), 'a', 'b', 'c'].sort())
 })
 
-test('lo que otra sesión guarda mientras se mide no se pierde', async ($, on) => {
+test('lo que otra sesión guarda mientras se mide no se pierde', ES, async ($, on) => {
   const seen = world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1) } } } })
   await start($)
   const reads = seen.historyReads
@@ -249,7 +251,7 @@ test('lo que otra sesión guarda mientras se mide no se pierde', async ($, on) =
   expect(Object.keys((seen.store.get(HISTORY_KEY) as DietHistory).sessions).sort()).toEqual([String(STARTED), 'a', 'otra'].sort())
 })
 
-test('/diet reset borra el historial', async ($, on) => {
+test('/diet reset borra el historial', ES, async ($, on) => {
   world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } } } })
   await start($)
   expect((await diet($, '')).text).toMatch(/CANDIDATO\s+firecrawl/)
@@ -257,7 +259,7 @@ test('/diet reset borra el historial', async ($, on) => {
   expect((await diet($, '')).text).toMatch(/OBSERVAR\s+firecrawl/)
 })
 
-test('la banda solo aparece por demanda, avisa con candidatos y se cierra con la ×', async ($, on) => {
+test('la banda solo aparece por demanda, avisa con candidatos y se cierra con la ×', ES, async ($, on) => {
   const seen = world(on)
   await start($)
   await diet($, '')
@@ -298,7 +300,7 @@ test('la banda solo aparece por demanda, avisa con candidatos y se cierra con la
   await shown.unmount()
 })
 
-test('la fila de /diet se dibuja como etiqueta; una fila vieja queda como texto', async ($, on) => {
+test('la fila de /diet se dibuja como etiqueta; una fila vieja queda como texto', ES, async ($, on) => {
   world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } } } })
   await start($)
   const text = (await diet($, '')).text ?? ''
@@ -334,7 +336,7 @@ test('la fila de /diet se dibuja como etiqueta; una fila vieja queda como texto'
   await old.unmount()
 })
 
-test('el historial viejo o corrupto no rompe el reporte', async ($, on) => {
+test('el historial viejo o corrupto no rompe el reporte', ES, async ($, on) => {
   world(on, { store: { [HISTORY_KEY]: { sessions: { viejo: pastSession(90), roto: 'x' } } } })
   await start($)
   const report = JSON.parse((await diet($, '--json')).text ?? '') as DietReport
@@ -342,7 +344,7 @@ test('el historial viejo o corrupto no rompe el reporte', async ($, on) => {
   expect(NOW - 90 * DAY).toBeLessThan(NOW)
 })
 
-test('el panel dibuja la etiqueta en cada superficie y se actualiza', async ($, on) => {
+test('el panel dibuja la etiqueta en cada superficie y se actualiza', ES, async ($, on) => {
   world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } } } })
   await start($)
 
@@ -367,7 +369,7 @@ test('el panel dibuja la etiqueta en cada superficie y se actualiza', async ($, 
   expect((await diet($, 'panel')).text).toBe('Context Diet: Panel visual abierto.')
 })
 
-test('en el panel cada cabecera pliega su recuadro; la ayuda va en tablas', async ($, on) => {
+test('en el panel cada cabecera pliega su recuadro; la ayuda va en tablas', ES, async ($, on) => {
   world(on)
   await start($)
   await diet($, '')
@@ -404,4 +406,41 @@ test('en el panel cada cabecera pliega su recuadro; la ayuda va en tablas', asyn
   })
   expect(await row.find({ type: 'Markdown' })).toBeDefined()
   await row.unmount()
+})
+
+test('en inglés por defecto: comando, ayuda, reporte y panel', async ($, on) => {
+  world(on, { store: { [HISTORY_KEY]: { sessions: { a: pastSession(1), b: pastSession(2), c: pastSession(3) } } } })
+  await start($)
+
+  const text = (await diet($, '')).text ?? ''
+  expect(text).toMatch(/CANDIDATE\s+firecrawl \[user\] · 8k loaded \(2\/3 tools\)[^\n]*used in 0\/3 sessions/)
+  expect(text).toContain('YOUR MCP SERVERS')
+  expect(text).not.toMatch(/CANDIDATO|cargados|sesiones/)
+
+  const all = (await diet($, '--all')).text ?? ''
+  expect(all).toContain('| Verdict | Server | Source | Loaded | Tools | Deferred | Calls | History |')
+  expect((await diet($, 'help')).text).toContain('| `/diet status on` | Shows the status line (off by default). |')
+  expect((await diet($, 'nope')).text).toMatch(/^Unknown argument: "nope"/)
+  expect((await diet($, 'panel')).text).toBe('Context Diet: visual panel opened.')
+
+  const report = JSON.parse((await diet($, '--json')).text ?? '') as DietReport
+  expect(report.lang).toBe('en')
+  expect(report.servers.find(server => server.name === 'firecrawl')?.action).toBe('claude mcp remove -s user firecrawl')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /▾ FIXED · per request/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /firecrawl \.+ 8k\s+0\/3\s+CANDIDATE/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /For more commands: \/diet help/ })).toBeDefined()
+  expect(await ui.find({ text: /Refresh/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('el pie del panel ya no explica la columna; la ayuda sí', ES, async ($, on) => {
+  world(on)
+  await start($)
+  await diet($, '')
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ text: /sesiones en que se usó/ })).toBe(undefined)
+  await ui.unmount()
+  expect((await diet($, 'help')).text).toMatch(/La columna \*\*usado\*\* del panel/)
 })

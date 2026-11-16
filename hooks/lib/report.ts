@@ -8,6 +8,7 @@ import type {
   DietEvidence,
   DietForecast,
   DietHistory,
+  DietLang,
   DietMemoryFile,
   DietReport,
   DietScope,
@@ -17,6 +18,7 @@ import type {
   DietUsage,
   DietVerdict,
 } from '../../types'
+import { strings } from './i18n'
 
 /**
  * Para llamar algo `candidate` hace falta no haberlo usado en sesiones de
@@ -32,12 +34,6 @@ export const HEAVY_MEMORY_TOKENS = 2000
 const DAY_MS = 24 * 60 * 60 * 1000
 /** Fuentes de skills que el usuario no puede quitar por su cuenta. */
 const FIXED_SKILL_SOURCES = new Set(['built-in', 'syncedSkills', 'policySettings', 'mcp'])
-const FIXED_SKILL_LABELS: Record<string, string> = {
-  'built-in': 'integradas',
-  syncedSkills: 'sincronizadas',
-  policySettings: 'de la organización',
-  mcp: 'de servers MCP',
-}
 const OWN_SKILL_SOURCES = new Set(['userSettings', 'projectSettings'])
 
 export const EMPTY_USAGE: DietUsage = {
@@ -59,6 +55,8 @@ export type ReportInput = {
   scopes: Record<string, DietScope>
   cwd: string
   now: number
+  /** El idioma de etiquetas y acciones; inglés si falta. */
+  lang?: DietLang
 }
 
 /** La grafía con la que llegan los `tool.call` de un server: su clave en los contadores. */
@@ -199,10 +197,15 @@ const HINT_TOOLS = 3
  * Un conector que solo llega con su id (así lo da la app de escritorio, y el
  * motor no expone otro nombre) se reconoce por sus tools.
  */
-export function serverLabel(name: string, serverName?: string, tools: readonly string[] = []): string {
+export function serverLabel(
+  name: string,
+  serverName?: string,
+  tools: readonly string[] = [],
+  lang?: DietLang,
+): string {
   const shown = serverName && !UUID.test(serverName) ? serverName : name
   if (UUID.test(shown)) {
-    const base = `conector ${shown.slice(0, 8)}`
+    const base = `${strings(lang).connector} ${shown.slice(0, 8)}`
     if (tools.length === 0) return base
     const hint = [...tools].sort().slice(0, HINT_TOOLS).join(', ')
     return `${base} (${hint}${tools.length > HINT_TOOLS ? '…' : ''})`
@@ -211,8 +214,8 @@ export function serverLabel(name: string, serverName?: string, tools: readonly s
   return shown
 }
 
-function serverAction(server: DietServer): string {
-  if (server.scope === 'connector') return `desconecta "${server.label}" desde /mcp o en claude.ai → Conectores`
+function serverAction(server: DietServer, lang?: DietLang): string {
+  if (server.scope === 'connector') return strings(lang).actionConnector(server.label)
   return `claude mcp remove -s ${server.scope} ${server.name}`
 }
 
@@ -221,7 +224,7 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
   const byName = new Map<string, DietServer>()
   const blank = (name: string): DietServer => ({
     name,
-    label: serverLabel(name),
+    label: serverLabel(name, undefined, [], input.lang),
     scope: scopeOf(name, input.scopes),
     tools: 0,
     loadedTools: 0,
@@ -249,7 +252,7 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
     if (parsed) names.push(parsed.tool)
     toolNames.set(server.name, names)
     server.isConnected = true
-    server.label = serverLabel(server.name, tool.serverName, names)
+    server.label = serverLabel(server.name, tool.serverName, names, input.lang)
     server.tools += 1
     server.totalTokens += tool.tokens
     if (tool.isLoaded) {
@@ -270,7 +273,7 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
       server.scope === 'host' ? (server.calls > 0 ? 'used' : 'info') : verdictOf(server.calls, server.evidence)
     if (server.verdict === 'candidate') {
       server.saving = server.loadedTokens
-      server.action = serverAction(server)
+      server.action = serverAction(server, input.lang)
     }
   }
   return [...byName.values()].sort(
@@ -279,6 +282,7 @@ function buildServers(input: ReportInput, history: DietHistory): DietServer[] {
 }
 
 function buildSkillGroups(input: ReportInput, history: DietHistory): DietSkillGroup[] {
+  const t = strings(input.lang)
   const listed = input.usage.context.breakdown?.skills?.skillFrontmatter ?? []
   const byKey = new Map<string, DietSkillGroup>()
   for (const skill of listed) {
@@ -290,7 +294,7 @@ function buildSkillGroups(input: ReportInput, history: DietHistory): DietSkillGr
     if (!group) {
       group = {
         key,
-        label: isOwn ? skill.name : (skill.pluginName ?? FIXED_SKILL_LABELS[source] ?? source),
+        label: isOwn ? skill.name : (skill.pluginName ?? t.fixedSkills[source] ?? source),
         source,
         pluginName: skill.pluginName ?? null,
         skills: 0,
@@ -321,8 +325,8 @@ function buildSkillGroups(input: ReportInput, history: DietHistory): DietSkillGr
     if (group.verdict !== 'candidate') continue
     group.saving = group.tokens
     group.action = group.pluginName
-      ? `claude plugin disable ${group.pluginName}   # antes: claude plugin details ${group.pluginName}`
-      : `mueve la carpeta de la skill "${group.label}" fuera de ${group.source === 'projectSettings' ? '.claude/skills' : '~/.claude/skills'}`
+      ? t.actionPlugin(group.pluginName)
+      : t.actionSkill(group.label, group.source === 'projectSettings' ? '.claude/skills' : '~/.claude/skills')
   }
   return [...byKey.values()].sort((a, b) => b.tokens - a.tokens || a.label.localeCompare(b.label))
 }
@@ -425,6 +429,7 @@ export function buildReport(input: ReportInput): { report: DietReport; history: 
     .reduce((sum, row) => sum + row.tokens, 0)
 
   const report: DietReport = {
+    lang: input.lang ?? 'en',
     generatedAt: input.now,
     cwd: input.cwd,
     model: breakdown?.model ?? '',

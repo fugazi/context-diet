@@ -1,6 +1,6 @@
 # Context Diet — Spec técnica
 
-**Versión:** 1.3.0 · **Fecha:** 2026-11-15 · **Claude Code:** 2.1.325+
+**Versión:** 1.4.0 · **Fecha:** 2026-11-15 · **Claude Code:** 2.1.325+
 
 ## Objetivo
 
@@ -32,6 +32,10 @@ El mod registra un comando, un panel y una línea de estado. No registra tools, 
 - **Banda** (`AbovePrompt`): apagada por defecto; tras `/diet status on`, una fila que solo se dibuja si hay candidatos o si quedan 10 turnos o menos para compactar, con una × que la apaga. Reemplaza a la línea de estado, que repetía el porcentaje que Claude ya muestra.
 
 Los colores son claves del tema (`success`, `warning`, `suggestion`, `merged`, `claude`, `subtle`, `inactive`), así que siguen al tema de la persona. Un mismo árbol sirve para terminal, escritorio, VS Code y móvil.
+
+## Idioma
+
+Todos los textos viven en `hooks/lib/i18n.ts`, en inglés y castellano con la misma forma. La opción `language` de `userConfig` (`en` por defecto, o `es`) llega a `register(on, options)`; un cambio recarga el módulo. El reporte lleva su idioma en `lang`, porque sus etiquetas y acciones ya vienen redactadas, y el texto y el tablero lo leen de ahí.
 
 ## Fuentes de datos
 
