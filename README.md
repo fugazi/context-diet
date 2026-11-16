@@ -108,3 +108,26 @@ Todo queda en la máquina. De los archivos de config solo se leen los nombres de
 - [docs/spec.md](docs/spec.md): diseño, fuentes de datos y reglas de veredicto.
 - [docs/spike-mods-api.md](docs/spike-mods-api.md): hallazgos sobre la API de mods.
 - [Claude Code mods](https://code.claude.com/docs/en/plugins/mods/overview)
+
+---
+
+## 🏠 Author
+
+- Name: `Douglas Urrea Ocampo`
+- Job: `SDET - Software Developer Engineer in Test`
+- Country: `Colombia`
+- City: `Medellin`
+- E-mail: `info@douglasfugazi.co`
+- LinkedIn: [https://www.linkedin.com/in/douglasfugazi](https://www.linkedin.com/in/douglasfugazi)
+- Contact: [https://douglasfugazi.co](https://douglasfugazi.co)
+- Test automation skills & agents: [https://github.com/fugazi/test-automation-skills-agents](https://github.com/fugazi/test-automation-skills-agents)
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<p align="center">Built with 💖 by Douglas Urrea Ocampo for the Claude Code community.</p>
