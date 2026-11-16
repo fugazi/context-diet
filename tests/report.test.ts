@@ -276,6 +276,28 @@ test('una sesión reanudada recupera lo que su registro ya tenía', () => {
   expect(restoreUsage(EMPTY_USAGE, spaced).servers.my_server?.calls).toBe(5)
 })
 
+test('la dieta: el fijo de ahora contra el de la primera sesión guardada', () => {
+  // Sin una sesión anterior que guardara su fijo no hay con qué comparar.
+  expect(build({ history: { sessions: { a: pastSession(1) } } }).report.trend).toBe(null)
+
+  // La más antigua manda; entonces cargaba 40k y ahora 30.3k.
+  const history = { sessions: { a: { ...pastSession(7), fixed: 40_000 }, b: { ...pastSession(2), fixed: 35_000 } } }
+  const { report, history: saved } = build({ history, counters: counters({ turns: 1 }) })
+  expect(report.trend).toEqual({ baseline: 40_000, baselineAt: NOW - 7 * DAY, days: 7, delta: -9700, percent: -24 })
+  expect(renderReport(report)).toContain('  dieta       Hace 7 días: 40k → 30.3k, −9.7k (−24%)')
+  expect(renderReport(report, { isDetailed: true })).toContain('| Cambio desde entonces | −9.7k (−24%) |')
+  // La sesión guarda su propio fijo, y no se compara consigo misma.
+  const id = String(report.generatedAt && usageFixture().startedAt)
+  expect(saved.sessions[id]?.fixed).toBe(30_300)
+  expect(build({ history: { sessions: { [id]: { ...pastSession(0), fixed: 99_000 } } } }).report.trend).toBe(null)
+
+  // Subir también se dice, y un fijo ilegible en el store se descarta.
+  const grew = build({ history: { sessions: { a: { ...pastSession(1), fixed: 20_200 } } }, lang: 'en' }).report
+  expect([grew.trend?.delta, grew.trend?.percent]).toEqual([10_100, 50])
+  expect(renderReport(grew)).toContain('1 day ago: 20.2k → 30.3k, +10.1k (+50%)')
+  expect(sanitizeHistory({ sessions: { a: { ...pastSession(1), fixed: 'x' } } }).sessions.a?.fixed).toBe(undefined)
+})
+
 test('una fila con puntos guía mide el ancho exacto y recorta el nombre', () => {
   const cells = (name: string, value: string, width: number) => {
     const row = leaderCells(name, value, width)

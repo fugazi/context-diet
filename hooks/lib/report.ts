@@ -15,6 +15,7 @@ import type {
   DietServer,
   DietSessionRecord,
   DietSkillGroup,
+  DietTrend,
   DietUsage,
   DietVerdict,
 } from '../../types'
@@ -104,6 +105,7 @@ export function sanitizeHistory(value: unknown): DietHistory {
       servers: record.servers && typeof record.servers === 'object' ? record.servers : {},
       skillGroups: record.skillGroups && typeof record.skillGroups === 'object' ? record.skillGroups : {},
       skills: record.skills && typeof record.skills === 'object' ? record.skills : {},
+      ...(typeof record.fixed === 'number' && Number.isFinite(record.fixed) ? { fixed: record.fixed } : {}),
     }
   }
   return { sessions }
@@ -357,16 +359,42 @@ function buildForecast(input: ReportInput, categories: DietCategory[]): DietFore
   return { used, threshold, isAutoCompactEnabled, headroom, fixed, conversation, perTurn, turnsLeft }
 }
 
+/**
+ * La dieta en una cifra: el fijo de ahora contra el de la sesión más antigua
+ * del historial que lo guardó. La sesión en curso no se compara consigo misma.
+ */
+export function buildTrend(history: DietHistory, currentId: string, fixed: number, now: number): DietTrend | null {
+  const earlier = Object.entries(history.sessions)
+    .filter(([id, record]) => id !== currentId && typeof record.fixed === 'number' && record.fixed > 0)
+    .map(([, record]) => record)
+    .sort((a, b) => a.startedAt - b.startedAt)[0]
+  if (!earlier || earlier.fixed === undefined) return null
+  const startOfDay = (at: number) => {
+    const date = new Date(at)
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  }
+  const delta = fixed - earlier.fixed
+  return {
+    baseline: earlier.fixed,
+    baselineAt: earlier.startedAt,
+    days: Math.max(0, Math.round((startOfDay(now) - startOfDay(earlier.startedAt)) / DAY_MS)),
+    delta,
+    percent: Math.round((delta / earlier.fixed) * 100),
+  }
+}
+
 /** El registro de esta sesión para el historial, con todo lo presente. */
 function currentRecord(
   input: ReportInput,
   servers: DietServer[],
   groups: DietSkillGroup[],
+  fixed: number,
 ): DietSessionRecord {
   const record: DietSessionRecord = {
     startedAt: input.usage.startedAt,
     lastAt: input.now,
     turns: input.counters.turns,
+    fixed,
     servers: {},
     skillGroups: {},
     skills: {},
@@ -393,17 +421,23 @@ export function buildReport(input: ReportInput): { report: DietReport; history: 
   input = { ...input, counters: restoreUsage(input.counters, pruned.sessions[id]) }
 
   // Primera pasada sin evidencia, solo para saber qué hay presente ahora.
-  const present = currentRecord(input, buildServers(input, EMPTY_HISTORY), buildSkillGroups(input, EMPTY_HISTORY))
-  const history: DietHistory =
-    present.turns > 0 ? { sessions: { ...pruned.sessions, [id]: present } } : pruned
-
-  const servers = buildServers(input, history)
-  const skillGroups = buildSkillGroups(input, history)
   const categories: DietCategory[] = (breakdown?.categories ?? []).map(row => ({
     name: row.name,
     tokens: row.tokens,
     kind: row.kind,
   }))
+  const forecast = buildForecast(input, categories)
+  const present = currentRecord(
+    input,
+    buildServers(input, EMPTY_HISTORY),
+    buildSkillGroups(input, EMPTY_HISTORY),
+    forecast.fixed,
+  )
+  const history: DietHistory =
+    present.turns > 0 ? { sessions: { ...pruned.sessions, [id]: present } } : pruned
+
+  const servers = buildServers(input, history)
+  const skillGroups = buildSkillGroups(input, history)
   const agents: DietAgent[] = (breakdown?.agents ?? [])
     .map(agent => ({
       agentType: agent.agentType,
@@ -420,7 +454,6 @@ export function buildReport(input: ReportInput): { report: DietReport; history: 
       isHeavy: file.tokens >= HEAVY_MEMORY_TOKENS,
     }))
     .sort((a, b) => b.tokens - a.tokens)
-  const forecast = buildForecast(input, categories)
   const candidates = [...servers, ...skillGroups].filter(item => item.verdict === 'candidate')
   const counted = Object.values(history.sessions).filter(record => record.turns > 0)
   const stamps = counted.map(record => record.startedAt)
@@ -453,6 +486,7 @@ export function buildReport(input: ReportInput): { report: DietReport; history: 
     agents,
     memory,
     forecast,
+    trend: buildTrend(history, id, forecast.fixed, input.now),
     history: {
       sessions: counted.length,
       days: stamps.length ? Math.max(1, Math.ceil((input.now - Math.min(...stamps)) / DAY_MS)) : 0,

@@ -61,6 +61,8 @@ const es = {
   historyNote: (sessions: number, days: number, minDays: number, minTurns: number, candidate: string) =>
     `Historial: ${sessions} sesión(es) en ${days} día(s). ${candidate} = sin uso en ${minDays}+ días distintos (sesiones de ${minTurns}+ turnos). Tokens estimados como en /context.`,
   moreDetail: 'Detalle: /diet --all.',
+  trendWhen: (days: number) => (days === 0 ? 'Hoy, en otra sesión' : days === 1 ? 'Hace 1 día' : `Hace ${days} días`),
+  noChange: 'sin cambio',
 
   // El resumen en texto.
   text: {
@@ -68,6 +70,8 @@ const es = {
     inUse: 'en uso',
     forecast: 'pronóstico',
     madeOf: 'hecho de',
+    diet: 'dieta',
+    trend: (when: string, then: string, now: string, change: string) => `${when}: ${then} → ${now}, ${change}`,
     servers: (count: number) => `TUS SERVIDORES MCP (${count})`,
     none: 'ninguno',
     idle: (names: string) => `sin costo ni uso: ${names} (diferidos, 0 por request)`,
@@ -98,6 +102,8 @@ const es = {
     perTurn: 'Gasto medio por turno',
     turnsLeft: 'Turnos que te quedan',
     unmeasured: 'sin medir',
+    trendThen: (when: string) => `Fijo por request · ${when.toLowerCase()}`,
+    trendChange: 'Cambio desde entonces',
     madeOf: 'De qué está hecho el fijo',
     part: 'Parte',
     servers: 'Tus servidores MCP',
@@ -137,6 +143,9 @@ const es = {
     shareConversation: 'conversación',
     shareFree: 'libre',
     madeOf: 'De qué está hecho el fijo',
+    trendTitle: 'Tu dieta',
+    trendChange: 'Cambio desde entonces',
+    trendNone: 'Aún no hay una sesión anterior con la que comparar.',
     others: (count: number) => `Otros (${count})`,
     leftTitle: (isAuto: boolean) => `QUEDA · ${isAuto ? 'hasta compactar' : 'hasta llenar el contexto'}`,
     turnsMeta: (turns: number) => `~${turns} turnos`,
@@ -263,12 +272,16 @@ const en: Strings = {
   historyNote: (sessions, days, minDays, minTurns, candidate) =>
     `History: ${sessions} session(s) over ${days} day(s). ${candidate} = unused on ${minDays}+ distinct days (sessions of ${minTurns}+ turns). Tokens estimated as in /context.`,
   moreDetail: 'Details: /diet --all.',
+  trendWhen: days => (days === 0 ? 'Today, in another session' : days === 1 ? '1 day ago' : `${days} days ago`),
+  noChange: 'no change',
 
   text: {
     fixed: (fixed, percent) => `FIXED ${fixed} per request · ${percent}% of what is in use`,
     inUse: 'in use',
     forecast: 'forecast',
     madeOf: 'made of',
+    diet: 'diet',
+    trend: (when, then, now, change) => `${when}: ${then} → ${now}, ${change}`,
     servers: count => `YOUR MCP SERVERS (${count})`,
     none: 'none',
     idle: names => `no cost and no use: ${names} (deferred, 0 per request)`,
@@ -298,6 +311,8 @@ const en: Strings = {
     perTurn: 'Average spend per turn',
     turnsLeft: 'Turns you have left',
     unmeasured: 'not measured',
+    trendThen: when => `Fixed per request · ${when.toLowerCase()}`,
+    trendChange: 'Change since then',
     madeOf: 'What the fixed part is made of',
     part: 'Part',
     servers: 'Your MCP servers',
@@ -336,6 +351,9 @@ const en: Strings = {
     shareConversation: 'conversation',
     shareFree: 'free',
     madeOf: 'What the fixed part is made of',
+    trendTitle: 'Your diet',
+    trendChange: 'Change since then',
+    trendNone: 'No earlier session to compare with yet.',
     others: count => `Others (${count})`,
     leftTitle: isAuto => `LEFT · ${isAuto ? 'until compaction' : 'until the context fills'}`,
     turnsMeta: turns => `~${turns} turns`,

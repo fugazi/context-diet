@@ -1,6 +1,6 @@
 # Context Diet — Spec técnica
 
-**Versión:** 1.4.0 · **Fecha:** 2026-11-15 · **Claude Code:** 2.1.325+
+**Versión:** 1.5.0 · **Fecha:** 2026-11-15 · **Claude Code:** 2.1.325+
 
 ## Objetivo
 
@@ -32,6 +32,10 @@ El mod registra un comando, un panel y una línea de estado. No registra tools, 
 - **Banda** (`AbovePrompt`): apagada por defecto; tras `/diet status on`, una fila que solo se dibuja si hay candidatos o si quedan 10 turnos o menos para compactar, con una × que la apaga. Reemplaza a la línea de estado, que repetía el porcentaje que Claude ya muestra.
 
 Los colores son claves del tema (`success`, `warning`, `suggestion`, `merged`, `claude`, `subtle`, `inactive`), así que siguen al tema de la persona. Un mismo árbol sirve para terminal, escritorio, VS Code y móvil.
+
+## Tu dieta
+
+Cada registro de sesión guarda `fixed`, el fijo por request de su última medición. El reporte lleva `trend`: el fijo de ahora contra el de la sesión más antigua del historial que lo guardó (`baseline`, `days`, `delta`, `percent`), o `null` si no hay ninguna anterior. La sesión en curso no se compara consigo misma, y los registros anteriores a la v1.5 no tienen `fixed`, así que la tendencia aparece a partir de la segunda sesión tras actualizar. Se muestra en el recuadro FIJO del tablero, en una línea del resumen y en la tabla Contexto de `/diet --all`.
 
 ## Idioma
 

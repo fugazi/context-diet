@@ -35,6 +35,21 @@ export type DietSessionRecord = {
   skillGroups: Record<string, number>
   /** Cada skill individual de usuario/proyecto presente, con sus cargas. */
   skills: Record<string, number>
+  /** El fijo por request en su última medición; falta en registros antiguos. */
+  fixed?: number
+}
+
+/** Cómo cambió el fijo desde la sesión más antigua del historial que lo guardó. */
+export type DietTrend = {
+  /** El fijo por request de aquella sesión. */
+  baseline: number
+  baselineAt: number
+  /** Días de calendario transcurridos desde entonces. */
+  days: number
+  /** Fijo de ahora menos el de entonces: negativo es dieta. */
+  delta: number
+  /** `delta` sobre el de entonces, en porcentaje redondeado. */
+  percent: number
 }
 
 export type DietHistory = {
@@ -176,6 +191,8 @@ export type DietReport = {
   agents: DietAgent[]
   memory: DietMemoryFile[]
   forecast: DietForecast
+  /** null hasta que haya una sesión anterior con su fijo guardado. */
+  trend: DietTrend | null
   history: {
     /** Sesiones guardadas con al menos un turno. */
     sessions: number

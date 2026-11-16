@@ -444,3 +444,21 @@ test('el pie del panel ya no explica la columna; la ayuda sí', ES, async ($, on
   await ui.unmount()
   expect((await diet($, 'help')).text).toMatch(/La columna \*\*usado\*\* del panel/)
 })
+
+test('el panel muestra la dieta cuando hay una sesión anterior con su fijo', ES, async ($, on) => {
+  const seen = world(on)
+  await start($)
+  await diet($, '')
+  const before = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await before.find({ type: 'Text', text: /Aún no hay una sesión anterior/ })).toBeDefined()
+  await before.unmount()
+
+  seen.store.set(HISTORY_KEY, { sessions: { a: { ...pastSession(5), fixed: 40_000 } } })
+  await diet($, '')
+  for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect(await ui.find({ type: 'Text', text: /Hace 5 días \.+ ~40k/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Cambio desde entonces \.+ −9\.7k \(−24%\)/ })).toBeDefined()
+    await ui.unmount()
+  }
+})
